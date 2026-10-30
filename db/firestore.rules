@@ -1,0 +1,413 @@
+// Models: admins/{uid}: enabled + optional email (254), created_at; no self role writes.
+// settings/event: phase A/B/C, updated_at, optional independent switches and activeChallengeId.
+// challenges/{id}: text (1000), referenceKeystrokes (1..5000), practice/enabled, optional title/deleted.
+// letters/{UUID}: private original + public edit/status/order, immutable owner/receipt/consent/timestamps.
+// publicLetters/{UUID}: id, nickname, content, order, sort_order; sanitized approved projection only.
+// typingResults/{UUID}: participant/name (30), challenge, time (<=1h), score, verification, prize, timestamps.
+// receipts/{UUID} and rateLimits/{uid}: immutable receipt metadata and atomic device throttling.
+// students/{opaque 20-character UID}: student_id is the same internal UID (not a school number).
+// student_name, admission_year, is_active, write_blocked,
+// blocked_until timestamp/null, created_at/updated_at timestamps; optional login_id current5digits, last_moderation_id UUID.
+// Legacy 7-digit document IDs remain accepted only during migration/backup recovery.
+// moderationLogs/{UUID}: target_student_id, action, reason(1..500), operator_uid,
+// related_letter_id UUID/null, created_at; immutable admin-only audit history.
+// settings/sessionPolicy: boothMode bool, idleMinutes int(1..120), academicYear int(2020..2100), updated_at.
+// letterTrash/{UUID}: private original letter snapshot, trashed_at/by, last_history_id UUID.
+// letterLogs/{UUID[-restore|-purge]}: letter_id, operator_uid, action, before/after snapshots,
+// created_at; immutable and admin-only. Live letters may carry last_history_id.
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() { return request.auth != null; }
+    function admin() {
+      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
+        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.enabled == true;
+    }
+    function student() {
+      return signedIn() && studentUid(request.auth.uid)
+        && request.auth.token.firebase.sign_in_provider == 'password'
+        && exists(/databases/$(database)/documents/students/$(request.auth.uid))
+        && get(/databases/$(database)/documents/students/$(request.auth.uid)).data.student_id == request.auth.uid
+        && get(/databases/$(database)/documents/students/$(request.auth.uid)).data.is_active == true
+        && (request.auth.uid.matches('[0-9]{7}')
+          || studentAlias(get(/databases/$(database)/documents/students/$(request.auth.uid)).data));
+    }
+    function studentUid(value) {
+      return value is string && (value.matches('[A-Za-z0-9_-]{20}') || value.matches('[0-9]{7}'));
+    }
+    function studentAlias(data) {
+      let loginId = data.get('login_id', '');
+      let email = request.auth.token.get('email', '');
+      return loginId is string && loginId.matches('[1-3][0-9]{4}') && email is string
+        && email.matches(loginId + '@students[.][A-Za-z0-9-]+[.]invalid');
+    }
+    function mayWriteLetter() {
+      let data = get(/databases/$(database)/documents/students/$(request.auth.uid)).data;
+      return student() && (!data.write_blocked || (data.blocked_until != null && data.blocked_until <= request.time));
+    }
+    function studentTyping(data) {
+      return student() && data.participantId == request.auth.uid
+        && data.displayName == get(/databases/$(database)/documents/students/$(request.auth.uid)).data.student_name;
+    }
+    function uuid(value) { return value is string && value.matches('[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'); }
+    function eventOpen(kind) {
+      let data = get(/databases/$(database)/documents/settings/event).data;
+      return data.phase == 'A' && (kind == 'letter' ? data.get('submissionsEnabled', true) : data.get('typingEnabled', true));
+    }
+    function welcomeOpen() {
+      let data = get(/databases/$(database)/documents/settings/event).data;
+      return data.get('welcomeEnabled', data.phase == 'C');
+    }
+    function newReceipt(id, kind) {
+      let receipt = getAfter(/databases/$(database)/documents/receipts/$(id)).data;
+      return receipt.id == id && receipt.kind == kind && receipt.created_at == request.time
+        && (receipt.owner_uid == request.auth.uid || (kind == 'typing' && recoveryOwner(getAfter(/databases/$(database)/documents/typingResults/$(id)).data)
+          && receipt.owner_uid == getAfter(/databases/$(database)/documents/typingResults/$(id)).data.owner_uid));
+    }
+    function recoveryOwner(data) {
+      return admin() && studentUid(data.owner_uid)
+        && data.participantId == data.owner_uid
+        && exists(/databases/$(database)/documents/students/$(data.owner_uid))
+        && get(/databases/$(database)/documents/students/$(data.owner_uid)).data.student_id == data.owner_uid;
+    }
+    function freshRate(id, kind) {
+      let rate = getAfter(/databases/$(database)/documents/rateLimits/$(request.auth.uid)).data;
+      return rate.last_event_id == id && rate.kind == kind && rate.last_write_at == request.time;
+    }
+    function text(value, minimum, maximum) {
+      // RE2 counts Unicode code points, matching the form's Array.from counter.
+      return value is string && value.matches('(?s).{' + string(minimum) + ',' + string(maximum) + '}')
+        && value.trim() == value;
+    }
+
+    function validStudent(data, id) {
+      return studentUid(id)
+        && data.keys().hasAll(['student_id', 'student_name', 'admission_year', 'is_active', 'write_blocked', 'blocked_until', 'created_at', 'updated_at'])
+        && data.keys().hasOnly(['student_id', 'student_name', 'admission_year', 'is_active', 'write_blocked', 'blocked_until', 'created_at', 'updated_at', 'last_moderation_id', 'login_id'])
+        && data.student_id == id && text(data.student_name, 1, 30)
+        && data.admission_year is int && data.admission_year >= 2020 && data.admission_year <= 2099
+        && (!id.matches('[0-9]{7}') || id.matches(string(data.admission_year - 2000) + '[0-9]{5}'))
+        && data.is_active is bool && data.write_blocked is bool
+        && (data.blocked_until == null || data.blocked_until is timestamp)
+        && (data.write_blocked || data.blocked_until == null)
+        && data.created_at is timestamp && data.updated_at is timestamp
+        && (!('last_moderation_id' in data) || uuid(data.last_moderation_id))
+        && (!('login_id' in data) || (data.login_id is string && data.login_id.matches('[1-3][0-9]{4}')));
+    }
+    function moderationChange(action, before, after) {
+      return (action == 'block_write' && after.is_active == before.is_active && after.write_blocked
+          && (after.blocked_until == null || after.blocked_until > request.time)
+          && (after.write_blocked != before.write_blocked || after.blocked_until != before.blocked_until))
+        || (action == 'unblock_write' && after.is_active == before.is_active && !after.write_blocked
+          && after.blocked_until == null && (before.write_blocked || before.blocked_until != null))
+        || (action == 'deactivate' && before.is_active && !after.is_active
+          && after.write_blocked == before.write_blocked && after.blocked_until == before.blocked_until)
+        || (action == 'activate' && !before.is_active && after.is_active
+          && after.write_blocked == before.write_blocked && after.blocked_until == before.blocked_until);
+    }
+    function studentAudit(id, before, after) {
+      let logId = after.last_moderation_id;
+      let log = getAfter(/databases/$(database)/documents/moderationLogs/$(logId)).data;
+      return uuid(logId) && before.get('last_moderation_id', '') != logId
+        && !exists(/databases/$(database)/documents/moderationLogs/$(logId))
+        && log.target_student_id == id && log.operator_uid == request.auth.uid && log.created_at == request.time
+        && moderationChange(log.action, before, after);
+    }
+    match /students/{id} {
+      allow get: if admin() || (signedIn() && request.auth.uid == id && request.auth.token.firebase.sign_in_provider == 'password');
+      allow list: if admin();
+      // Provisioning and password operations use the server Admin SDK only.
+      allow create, delete: if false;
+      allow update: if admin() && validStudent(request.resource.data, id)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_active', 'write_blocked', 'blocked_until', 'updated_at', 'last_moderation_id'])
+        && request.resource.data.updated_at == request.time
+        && studentAudit(id, resource.data, request.resource.data);
+    }
+    match /moderationLogs/{id} {
+      function valid(data) {
+        let after = getAfter(/databases/$(database)/documents/students/$(data.target_student_id)).data;
+        let before = get(/databases/$(database)/documents/students/$(data.target_student_id)).data;
+        return uuid(id)
+          && data.keys().hasAll(['target_student_id', 'action', 'reason', 'operator_uid', 'related_letter_id', 'created_at'])
+          && data.keys().hasOnly(['target_student_id', 'action', 'reason', 'operator_uid', 'related_letter_id', 'created_at'])
+          && studentUid(data.target_student_id)
+          && text(data.reason, 1, 500) && data.operator_uid == request.auth.uid && data.created_at == request.time
+          && data.action in ['block_write', 'unblock_write', 'deactivate', 'activate']
+          && (data.related_letter_id == null || (uuid(data.related_letter_id)
+            && get(/databases/$(database)/documents/letters/$(data.related_letter_id)).data.owner_uid == data.target_student_id))
+          && after.last_moderation_id == id && after.updated_at == request.time
+          && moderationChange(data.action, before, after);
+      }
+      allow read: if admin();
+      allow create: if admin() && valid(request.resource.data);
+      allow update, delete: if false;
+    }
+    match /settings/sessionPolicy {
+      function valid(data) {
+        return data.keys().hasAll(['boothMode', 'idleMinutes', 'academicYear', 'updated_at'])
+          && data.keys().hasOnly(['boothMode', 'idleMinutes', 'academicYear', 'updated_at'])
+          && data.boothMode is bool && data.idleMinutes is int && data.idleMinutes >= 1 && data.idleMinutes <= 120
+          && data.academicYear is int && data.academicYear >= 2020 && data.academicYear <= 2100
+          && data.updated_at == request.time;
+      }
+      allow get: if true;
+      allow create, update: if admin() && valid(request.resource.data);
+      allow list, delete: if false;
+    }
+
+    match /admins/{uid} {
+      function valid(data) {
+        return data.keys().hasAll(['enabled', 'email', 'created_at'])
+          && data.keys().hasOnly(['enabled', 'email', 'created_at']) && data.enabled == true
+          && text(data.email, 3, 254) && data.created_at is timestamp;
+      }
+      allow get: if signedIn() && (request.auth.uid == uid || admin());
+      allow list: if admin();
+      allow create: if admin() && request.auth.uid != uid && valid(request.resource.data) && request.resource.data.created_at == request.time;
+      allow update: if false;
+      allow delete: if admin() && request.auth.uid != uid;
+    }
+    match /settings/event {
+      function valid(data) {
+        return data.keys().hasAll(['phase', 'updated_at'])
+          && data.keys().hasOnly(['phase', 'updated_at', 'typingEnabled', 'submissionsEnabled', 'welcomeEnabled', 'activeChallengeId'])
+          && data.phase in ['A', 'B', 'C'] && data.updated_at == request.time
+          && data.get('typingEnabled', true) is bool && data.get('submissionsEnabled', true) is bool
+          && data.get('welcomeEnabled', false) is bool
+          && (!('activeChallengeId' in data) || (text(data.activeChallengeId, 1, 100)
+            && getAfter(/databases/$(database)/documents/challenges/$(data.activeChallengeId)).data.enabled == true
+            && getAfter(/databases/$(database)/documents/challenges/$(data.activeChallengeId)).data.get('deleted', false) == false));
+      }
+      allow read: if true;
+      allow create, update: if admin() && valid(request.resource.data);
+      allow delete: if false;
+    }
+    match /challenges/{id} {
+      function valid(data) {
+        return id.matches('[a-zA-Z0-9_-]{1,100}')
+          && data.keys().hasAll(['text', 'referenceKeystrokes', 'practice', 'enabled'])
+          && data.keys().hasOnly(['text', 'referenceKeystrokes', 'practice', 'enabled', 'title', 'deleted'])
+          && text(data.text, 1, 1000) && data.referenceKeystrokes is int && data.referenceKeystrokes > 0
+          && data.referenceKeystrokes <= 5000 && data.practice is bool && data.enabled is bool
+          && text(data.get('title', id), 1, 100) && data.get('deleted', false) is bool
+          && (!data.get('deleted', false) || !data.enabled);
+      }
+      allow read: if true;
+      allow create: if admin() && valid(request.resource.data);
+      allow update: if admin() && valid(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'enabled', 'deleted'])
+        && (request.resource.data.enabled || getAfter(/databases/$(database)/documents/settings/event).data.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0') != id);
+      allow delete: if false;
+    }
+    match /rateLimits/{uid} {
+      function shape() {
+        let data = request.resource.data;
+        return (admin() || student()) && uid == request.auth.uid && data.keys().hasOnly(['window_start', 'count', 'last_write_at', 'last_event_id', 'kind'])
+          && data.count is int && data.count > 0 && data.count <= 600 && data.window_start is timestamp
+          && data.last_write_at == request.time && uuid(data.last_event_id) && data.kind in ['letter', 'typing']
+          && newReceipt(data.last_event_id, data.kind);
+      }
+      allow get: if signedIn() && uid == request.auth.uid;
+      allow create: if shape() && request.resource.data.window_start == request.time && request.resource.data.count == 1;
+      allow update: if shape() && (
+        (request.time - resource.data.window_start >= duration.value(60, 's')
+          && request.resource.data.window_start == request.time && request.resource.data.count == 1)
+        || (request.time - resource.data.window_start < duration.value(60, 's')
+          && request.resource.data.window_start == resource.data.window_start && request.resource.data.count == resource.data.count + 1)
+      );
+      allow list, delete: if false;
+    }
+    match /receipts/{id} {
+      function targetExists(data) {
+        return data.kind == 'letter'
+          ? getAfter(/databases/$(database)/documents/letters/$(id)).data.created_at == request.time
+            && getAfter(/databases/$(database)/documents/letters/$(id)).data.owner_uid == data.owner_uid
+          : getAfter(/databases/$(database)/documents/typingResults/$(id)).data.received_at == request.time
+            && getAfter(/databases/$(database)/documents/typingResults/$(id)).data.owner_uid == data.owner_uid;
+      }
+      // Receipts contain only receipt metadata, never a student's original text or name.
+      allow get: if signedIn() && (!exists(/databases/$(database)/documents/receipts/$(id)) || resource.data.owner_uid == request.auth.uid || admin());
+      allow create: if (admin() || student()) && uuid(id) && request.resource.data.keys().hasOnly(['id', 'owner_uid', 'kind', 'payload_hash', 'created_at'])
+        && request.resource.data.id == id && (request.resource.data.owner_uid == request.auth.uid
+          || (request.resource.data.kind == 'typing' && recoveryOwner(getAfter(/databases/$(database)/documents/typingResults/$(id)).data)))
+        && request.resource.data.kind in ['letter', 'typing'] && request.resource.data.created_at == request.time
+        && request.resource.data.payload_hash is string && request.resource.data.payload_hash.matches('[0-9a-f]{64}')
+        && targetExists(request.resource.data) && freshRate(id, request.resource.data.kind);
+      allow list: if admin();
+      allow update, delete: if false;
+    }
+    function historyId(value) {
+      return value is string && value.matches('[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-restore|-purge)?');
+    }
+    function validLetter(data, id) {
+        return data.keys().hasAll(['id', 'owner_uid', 'nickname', 'content', 'published_content', 'consent_to_publish', 'status', 'publish_order', 'submission_key', 'created_at', 'reviewed_at'])
+          && data.keys().hasOnly(['id', 'owner_uid', 'nickname', 'content', 'published_content', 'consent_to_publish', 'status', 'publish_order', 'submission_key', 'created_at', 'reviewed_at', 'last_history_id'])
+          && data.id == id && uuid(id) && text(data.content, 10, 700)
+          && text(data.owner_uid, 1, 128) && data.created_at is timestamp && (data.reviewed_at == null || data.reviewed_at is timestamp)
+          && (data.nickname == null || (text(data.nickname, 1, 30) && !data.nickname.matches('(?s).*\\n.*')))
+          && data.consent_to_publish == 1 && data.submission_key == id
+          && data.status in ['pending', 'approved', 'rejected']
+          && (data.published_content == null || text(data.published_content, 1, 700))
+          && (data.publish_order == null || (data.publish_order is int && data.publish_order >= 0 && data.publish_order <= 1000000))
+          && (!('last_history_id' in data) || historyId(data.last_history_id));
+    }
+    function letterPublicSynced(id, data) {
+        return data.status == 'approved'
+          ? getAfter(/databases/$(database)/documents/publicLetters/$(id)).data == projection(data)
+          : !existsAfter(/databases/$(database)/documents/publicLetters/$(id));
+    }
+    function freshLetterLog(logId, id, action, before, after) {
+      let log = getAfter(/databases/$(database)/documents/letterLogs/$(logId)).data;
+      return historyId(logId) && !exists(/databases/$(database)/documents/letterLogs/$(logId))
+        && log.letter_id == id && log.action == action && log.operator_uid == request.auth.uid
+        && log.created_at == request.time && log.before == before && log.after == after;
+    }
+    function letterEditAudit(id, before, after) {
+      let logId = after.last_history_id;
+      let action = getAfter(/databases/$(database)/documents/letterLogs/$(logId)).data.action;
+      return action in ['edit', 'review'] && before.get('last_history_id', '') != logId
+        && (action != 'review' || after.diff(before).affectedKeys().hasOnly(['status', 'reviewed_at', 'last_history_id']))
+        && freshLetterLog(logId, id, action, before, after);
+    }
+    function letterRestore(id, after) {
+      let trash = get(/databases/$(database)/documents/letterTrash/$(id)).data;
+      return !existsAfter(/databases/$(database)/documents/letterTrash/$(id))
+        && after.diff(trash.letter).affectedKeys().hasOnly(['status', 'reviewed_at', 'last_history_id'])
+        && after.status == 'pending' && after.reviewed_at == request.time
+        && after.last_history_id == trash.last_history_id + '-restore'
+        && freshLetterLog(after.last_history_id, id, 'restore', trash.letter, after);
+    }
+    match /letters/{id} {
+      allow read: if admin();
+      allow create: if signedIn() && validLetter(request.resource.data, id)
+        && ((admin() && letterPublicSynced(id, request.resource.data)
+            && ((!exists(/databases/$(database)/documents/letterTrash/$(id))
+                && request.resource.data.owner_uid == request.auth.uid && request.resource.data.created_at == request.time
+                && request.resource.data.reviewed_at == request.time
+                && freshLetterLog(request.resource.data.last_history_id, id, 'create', null, request.resource.data))
+              || (exists(/databases/$(database)/documents/letterTrash/$(id)) && letterRestore(id, request.resource.data))))
+          || (mayWriteLetter() && !('last_history_id' in request.resource.data)
+            && request.resource.data.owner_uid == request.auth.uid && request.resource.data.created_at == request.time
+            && eventOpen('letter') && request.resource.data.status == 'pending' && request.resource.data.published_content == null
+            && request.resource.data.publish_order == null && request.resource.data.reviewed_at == null && newReceipt(id, 'letter')));
+      allow update: if admin() && validLetter(request.resource.data, id)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'content', 'status', 'published_content', 'publish_order', 'reviewed_at', 'last_history_id'])
+        && request.resource.data.reviewed_at == request.time && letterPublicSynced(id, request.resource.data)
+        && letterEditAudit(id, resource.data, request.resource.data);
+      allow delete: if admin() && !existsAfter(/databases/$(database)/documents/publicLetters/$(id))
+        && getAfter(/databases/$(database)/documents/letterTrash/$(id)).data.letter == resource.data
+        && freshLetterLog(getAfter(/databases/$(database)/documents/letterTrash/$(id)).data.last_history_id, id, 'trash', resource.data, null);
+    }
+    match /letterTrash/{id} {
+      function valid(data) {
+        return data.keys().hasAll(['letter', 'trashed_at', 'trashed_by', 'last_history_id'])
+          && data.keys().hasOnly(['letter', 'trashed_at', 'trashed_by', 'last_history_id'])
+          && validLetter(data.letter, id) && data.trashed_at == request.time
+          && data.trashed_by == request.auth.uid && uuid(data.last_history_id);
+      }
+      allow read: if admin();
+      allow create: if admin() && valid(request.resource.data)
+        && request.resource.data.letter == get(/databases/$(database)/documents/letters/$(id)).data
+        && !existsAfter(/databases/$(database)/documents/letters/$(id))
+        && !existsAfter(/databases/$(database)/documents/publicLetters/$(id))
+        && freshLetterLog(request.resource.data.last_history_id, id, 'trash', request.resource.data.letter, null);
+      allow update: if false;
+      allow delete: if admin() &&
+        ((existsAfter(/databases/$(database)/documents/letters/$(id))
+            && letterRestore(id, getAfter(/databases/$(database)/documents/letters/$(id)).data))
+          || (!existsAfter(/databases/$(database)/documents/letters/$(id))
+            && !existsAfter(/databases/$(database)/documents/publicLetters/$(id))
+            && freshLetterLog(resource.data.last_history_id + '-purge', id, 'purge', resource.data.letter, null)));
+    }
+    match /letterLogs/{logId} {
+      function valid(data) {
+        return historyId(logId)
+          && data.keys().hasAll(['letter_id', 'operator_uid', 'action', 'before', 'after', 'created_at'])
+          && data.keys().hasOnly(['letter_id', 'operator_uid', 'action', 'before', 'after', 'created_at'])
+          && uuid(data.letter_id) && data.operator_uid == request.auth.uid && data.created_at == request.time
+          && (data.before == null || validLetter(data.before, data.letter_id))
+          && (data.after == null || validLetter(data.after, data.letter_id))
+          && ((data.action == 'create' && data.before == null
+              && !exists(/databases/$(database)/documents/letters/$(data.letter_id))
+              && data.after == getAfter(/databases/$(database)/documents/letters/$(data.letter_id)).data
+              && data.after.last_history_id == logId)
+            || (data.action in ['edit', 'review']
+              && data.before == get(/databases/$(database)/documents/letters/$(data.letter_id)).data
+              && data.after == getAfter(/databases/$(database)/documents/letters/$(data.letter_id)).data
+              && data.after.last_history_id == logId)
+            || (data.action == 'trash' && data.after == null
+              && data.before == get(/databases/$(database)/documents/letters/$(data.letter_id)).data
+              && !existsAfter(/databases/$(database)/documents/letters/$(data.letter_id))
+              && getAfter(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.last_history_id == logId
+              && getAfter(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.letter == data.before)
+            || (data.action == 'restore'
+              && data.before == get(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.letter
+              && logId == get(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.last_history_id + '-restore'
+              && !existsAfter(/databases/$(database)/documents/letterTrash/$(data.letter_id))
+              && data.after == getAfter(/databases/$(database)/documents/letters/$(data.letter_id)).data
+              && data.after.last_history_id == logId)
+            || (data.action == 'purge' && data.after == null
+              && data.before == get(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.letter
+              && logId == get(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.last_history_id + '-purge'
+              && !existsAfter(/databases/$(database)/documents/letterTrash/$(data.letter_id))
+              && !existsAfter(/databases/$(database)/documents/letters/$(data.letter_id))));
+      }
+      allow read: if admin();
+      allow create: if admin() && valid(request.resource.data);
+      allow update, delete: if false;
+    }
+    function projection(data) {
+      return {'id': data.id, 'nickname': data.nickname == null ? '익명' : data.nickname,
+        'content': data.published_content == null ? data.content : data.published_content,
+        'order': data.publish_order, 'sort_order': data.publish_order == null ? 1000001 : data.publish_order};
+    }
+    match /publicLetters/{id} {
+      function valid(data) {
+        let source = getAfter(/databases/$(database)/documents/letters/$(id)).data;
+        return source.status == 'approved' && source.consent_to_publish == 1 && data == projection(source);
+      }
+      allow read: if admin() || welcomeOpen();
+      allow create, update: if admin() && valid(request.resource.data);
+      allow delete: if admin() && (!existsAfter(/databases/$(database)/documents/letters/$(id))
+        || getAfter(/databases/$(database)/documents/letters/$(id)).data.status != 'approved');
+    }
+    match /typingResults/{id} {
+      function validScore(data) {
+        let challenge = get(/databases/$(database)/documents/challenges/$(data.challengeId)).data;
+        // Force floating division even when elapsedMs was stored as an integer.
+        let calculated = challenge.referenceKeystrokes * 60000.0 / data.elapsedMs;
+        let rawScore = data.speed - data.errors * 20;
+        return challenge.practice == data.practice
+          && data.speed is int && data.speed >= 0 && data.speed - 0.5 <= calculated && calculated < data.speed + 0.5
+          && data.errors is int && data.errors >= 0 && data.errors <= 10000
+          && data.score is int && data.score == (rawScore > 0 ? rawScore : 0);
+      }
+      function valid(data) {
+        return data.keys().hasAll(['id', 'owner_uid', 'participantId', 'displayName', 'challengeId', 'elapsedMs', 'speed', 'errors', 'score', 'completedAt', 'prizeReceived', 'practice', 'verificationStatus', 'received_at', 'reviewed_at'])
+          && data.keys().hasOnly(['id', 'owner_uid', 'participantId', 'displayName', 'challengeId', 'elapsedMs', 'speed', 'errors', 'score', 'completedAt', 'prizeReceived', 'practice', 'verificationStatus', 'received_at', 'reviewed_at'])
+          && data.id == id && uuid(id) && text(data.owner_uid, 1, 128)
+          && text(data.participantId, 1, 30) && text(data.displayName, 1, 30)
+          && text(data.challengeId, 1, 100) && data.challengeId.matches('[a-zA-Z0-9_-]+')
+          && data.elapsedMs is number && data.elapsedMs > 0 && data.elapsedMs <= 3600000
+          && data.completedAt is string && data.completedAt.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z') && data.completedAt.size() <= 30
+          && data.received_at is timestamp && (data.reviewed_at == null || data.reviewed_at is timestamp)
+          && data.prizeReceived is bool && data.practice is bool && data.verificationStatus in ['pending', 'verified', 'rejected']
+          && (!data.prizeReceived || (!data.practice && data.verificationStatus == 'verified')) && validScore(data);
+      }
+      allow read: if admin();
+      // Operators may recover queued booth records after the public event closes.
+      allow create: if signedIn() && valid(request.resource.data)
+        && (request.resource.data.owner_uid == request.auth.uid || recoveryOwner(request.resource.data)) && request.resource.data.received_at == request.time
+        && ((admin() && request.resource.data.reviewed_at == request.time)
+          || ((admin() || (studentTyping(request.resource.data) && eventOpen('typing'))) && request.resource.data.prizeReceived == false
+            && request.resource.data.verificationStatus == 'pending' && request.resource.data.reviewed_at == null
+            && (admin() || get(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId)).data.enabled == true)
+            && newReceipt(id, 'typing')));
+      allow update: if admin() && valid(request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantId', 'displayName', 'challengeId', 'practice', 'elapsedMs', 'speed', 'errors', 'score', 'prizeReceived', 'verificationStatus', 'reviewed_at'])
+        && request.resource.data.reviewed_at == request.time;
+      allow delete: if admin();
+    }
+    match /{document=**} { allow read, write: if false; }
+  }
+}

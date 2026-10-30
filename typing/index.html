@@ -1,0 +1,76 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>타자 대회</title>
+    <link rel="stylesheet" href="../style.css" />
+    <link rel="stylesheet" href="./style.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <main class="container">
+      <header class="page-header">
+        <h1>타자 대회</h1>
+      </header>
+      <div id="login"></div>
+      <div id="student-view" hidden>
+        <p id="event-status" role="status">운영 상태 확인 중</p>
+        <button id="reload" type="button" hidden>다시 불러오기</button>
+        <section class="panel" aria-labelledby="challenge-title">
+          <div class="section-top">
+            <h2 id="challenge-title">문구</h2>
+            <span id="attempt-status"></span>
+          </div>
+          <dl class="metrics" aria-live="off">
+            <div>
+              <dt>시간 (초)</dt>
+              <dd id="elapsed">0.0</dd>
+            </div>
+            <div>
+              <dt>누적 오타</dt>
+              <dd id="errors">0</dd>
+            </div>
+            <div>
+              <dt>점수</dt>
+              <dd id="score">—</dd>
+            </div>
+          </dl>
+          <p id="challenge" class="challenge" aria-label="입력할 문구"></p>
+          <label for="typing-input">문구 입력</label>
+          <textarea
+            id="typing-input"
+            rows="5"
+            disabled
+            spellcheck="false"
+            autocomplete="off"
+            autocorrect="off"
+            autocapitalize="off"
+            aria-describedby="feedback"
+          ></textarea>
+          <p id="feedback" role="status">문구를 입력하면 측정이 시작됩니다.</p>
+          <p id="result" hidden></p>
+          <div class="actions">
+            <button id="retry" type="button" hidden>저장 재시도</button>
+            <button id="rescue" type="button" hidden>기록 파일 저장</button>
+            <button id="rescue-confirm" type="button" hidden>파일 저장 완료</button>
+          </div>
+        </section>
+        <details class="panel">
+          <summary>채점 규칙</summary>
+          <ul>
+            <li>첫 입력부터 측정하며, 문구를 정확히 완성하면 종료합니다.</li>
+            <li>
+              분당 타수 = 기준 <span id="reference-keys">—</span>타 × 60 ÷ 소요 초.
+              반올림합니다.
+            </li>
+            <li>두벌식 기준입니다. Shift는 제외하고 공백·문장부호는 각각 1타입니다.</li>
+            <li>확정한 오타마다 20점 감점하며 수정해도 누적됩니다. 최저 점수는 0점입니다.</li>
+            <li>동점은 오타 수, 소요 시간 순입니다. 모두 같으면 공동 순위입니다.</li>
+            <li>붙여넣기와 끌어놓기를 차단합니다. 측정 중 창을 벗어나면 중단합니다.</li>
+          </ul>
+        </details>
+      </div>
+    </main>
+  </body>
+</html>

@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="ko">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>공개 글</title>
+    <link rel="stylesheet" href="../style.css" />
+    <script type="module" src="./app.js"></script>
+  </head>
+  <body>
+    <main class="container">
+      <h1>공개 글</h1>
+      <p id="status" role="status">불러오는 중</p>
+      <p id="error" class="error" role="alert" hidden></p>
+      <button id="retry" type="button" hidden>다시 불러오기</button>
+      <div id="letters" class="letter-list"></div>
+      <nav id="pagination" class="pagination" aria-label="글 목록 페이지" hidden>
+        <button id="previous" type="button" disabled>이전</button>
+        <span id="page">1 페이지</span>
+        <button id="next" type="button" disabled>다음</button>
+      </nav>
+      <noscript>JavaScript를 활성화해 주세요.</noscript>
+    </main>
+  </body>
+</html>

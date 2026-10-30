@@ -1,0 +1,199 @@
+{
+  "indexes": [
+    {
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "ASCENDING"
+        }
+      ],
+      "collectionGroup": "letters",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ],
+      "collectionGroup": "letters",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "letter.status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "trashed_at",
+          "order": "ASCENDING"
+        }
+      ],
+      "collectionGroup": "letterTrash",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "letter.status",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "trashed_at",
+          "order": "DESCENDING"
+        }
+      ],
+      "collectionGroup": "letterTrash",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "challengeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "score",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "errors",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "elapsedMs",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "completedAt",
+          "order": "ASCENDING"
+        }
+      ],
+      "collectionGroup": "typingResults",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "challengeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "verificationStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "score",
+          "order": "DESCENDING"
+        },
+        {
+          "fieldPath": "errors",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "elapsedMs",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "completedAt",
+          "order": "ASCENDING"
+        }
+      ],
+      "collectionGroup": "typingResults",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "challengeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "received_at",
+          "order": "DESCENDING"
+        }
+      ],
+      "collectionGroup": "typingResults",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "challengeId",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "verificationStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "received_at",
+          "order": "DESCENDING"
+        }
+      ],
+      "collectionGroup": "typingResults",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "letter_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ],
+      "collectionGroup": "letterLogs",
+      "queryScope": "COLLECTION"
+    }
+  ],
+  "fieldOverrides": [
+    {
+      "collectionGroup": "letters",
+      "fieldPath": "content",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "letters",
+      "fieldPath": "published_content",
+      "indexes": []
+    },
+    {
+      "collectionGroup": "receipts",
+      "fieldPath": "payload_hash",
+      "indexes": []
+    },
+    {
+      "fieldPath": "before",
+      "collectionGroup": "letterLogs",
+      "indexes": []
+    },
+    {
+      "fieldPath": "after",
+      "collectionGroup": "letterLogs",
+      "indexes": []
+    },
+    {
+      "fieldPath": "letter.content",
+      "collectionGroup": "letterTrash",
+      "indexes": []
+    },
+    {
+      "fieldPath": "letter.published_content",
+      "collectionGroup": "letterTrash",
+      "indexes": []
+    }
+  ]
+}

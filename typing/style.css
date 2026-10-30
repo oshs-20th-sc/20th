@@ -1,0 +1,67 @@
+.page-header,
+.section-top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+}
+.metrics {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 12px;
+  margin: 20px 0;
+}
+.metrics > div {
+  border: 1px solid #ddd;
+  padding: 12px;
+}
+.metrics dt {
+  font-size: 0.875rem;
+  color: #555;
+}
+.metrics dd {
+  margin: 6px 0 0;
+  font-size: 1.5rem;
+  font-variant-numeric: tabular-nums;
+}
+.challenge {
+  padding: 18px;
+  border: 1px solid #ccc;
+  font-size: 1.3rem;
+  line-height: 1.9;
+  overflow-wrap: anywhere;
+  white-space: pre-wrap;
+}
+.challenge .correct {
+  color: #126734;
+}
+.challenge .incorrect {
+  color: #a11111;
+  text-decoration: underline;
+  text-decoration-thickness: 2px;
+}
+.challenge .cursor {
+  border-bottom: 2px solid currentColor;
+}
+#typing-input {
+  width: 100%;
+  font-size: 1.1rem;
+}
+#result {
+  font-weight: 700;
+}
+#feedback.error {
+  color: #a11111;
+}
+@media (max-width: 600px) {
+  .metrics {
+    gap: 6px;
+  }
+  .metrics > div {
+    padding: 10px;
+  }
+  .challenge {
+    font-size: 1.1rem;
+    padding: 12px;
+  }
+}

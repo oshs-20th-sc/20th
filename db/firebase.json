@@ -1,0 +1,38 @@
+{
+  "functions": [
+    {
+      "source": "scripts/functions",
+      "codebase": "student-admin",
+      "ignore": ["node_modules", ".env*", "*.log"]
+    }
+  ],
+  "firestore": {
+    "rules": "firestore.rules",
+    "indexes": "firestore.indexes.json"
+  },
+  "emulators": {
+    "functions": { "host": "127.0.0.1", "port": 5008 },
+    "auth": {
+      "host": "127.0.0.1",
+      "port": 9098
+    },
+    "firestore": {
+      "host": "127.0.0.1",
+      "port": 8088
+    },
+    "ui": {
+      "enabled": true,
+      "host": "127.0.0.1",
+      "port": 4008
+    },
+    "hub": {
+      "host": "127.0.0.1",
+      "port": 4408
+    },
+    "logging": {
+      "host": "127.0.0.1",
+      "port": 4508
+    },
+    "singleProjectMode": true
+  }
+}
