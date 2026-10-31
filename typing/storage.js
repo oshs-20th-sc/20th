@@ -59,7 +59,7 @@ export function resultsCsv(results, { rankedOnly = true } = {}) {
       '순위',
       '학번',
       '이름',
-      '문구 버전',
+      '문구',
       '소요 시간(ms)',
       '타수',
       '오타',

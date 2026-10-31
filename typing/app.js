@@ -84,7 +84,7 @@ function transition(next) {
 function showChallenge(current) {
   elements['challenge-title'].textContent = current.title;
   elements['reference-keys'].textContent = current.referenceKeystrokes;
-  elements['error-penalty'].textContent = current.errorPenalty;
+  elements['error-penalty'].textContent = current.errorPenalty ?? 20;
   elements.challenge.setAttribute('aria-label', `입력할 문구: ${current.text}`);
   spans = Array.from(current.text, (character) => {
     const span = document.createElement('span');
@@ -201,7 +201,12 @@ function process(value, endedComposition = false) {
     owner_uid: participant.uid,
     challengeId: attempt.challengeId,
     elapsedMs: elapsed,
-    ...calculateScore(attempt.referenceKeystrokes, elapsed, engine.errors, attempt.errorPenalty),
+    ...calculateScore(
+      attempt.referenceKeystrokes,
+      elapsed,
+      engine.errors,
+      attempt.errorPenalty,
+    ),
     errors: engine.errors,
     completedAt: new Date().toISOString(),
     prizeReceived: false,

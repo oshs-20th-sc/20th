@@ -119,7 +119,12 @@ export function validateTypingResult(input, challenge = CHALLENGE) {
     input.elapsedMs > 3600000
   )
     throw new ClientError('타자 기록의 형식을 확인해 주세요.', 400, 'INVALID_RESULT');
-  const computed = calculateScore(challenge.referenceKeystrokes, input.elapsedMs, input.errors, challenge.errorPenalty);
+  const computed = calculateScore(
+    challenge.referenceKeystrokes,
+    input.elapsedMs,
+    input.errors,
+    challenge.errorPenalty,
+  );
   if (input.speed !== computed.speed || input.score !== computed.score)
     throw new ClientError('타수와 최종 점수 계산이 일치하지 않습니다.', 400, 'INVALID_SCORE');
 }
@@ -727,75 +732,70 @@ export async function readChallenge(db, id) {
   const snapshot = await withDeadline(getDoc(doc(db, 'challenges', id)));
   if (!snapshot.exists())
     throw new ClientError('대회 문구를 찾을 수 없습니다. 문구 설정을 확인해 주세요.', 400);
+  return decodeChallenge(snapshot);
+}
+export async function readChallenges(db) {
+  return (await allDocuments(db, 'challenges')).map(decodeChallenge);
+}
+function decodeChallenge(snapshot) {
   const data = snapshot.data();
+  const errorPenalty = Object.hasOwn(data, 'errorPenalty') ? data.errorPenalty : 20;
+  if (!Number.isInteger(errorPenalty) || errorPenalty < 0 || errorPenalty > 100)
+    throw new ClientError('문구의 오타 감점은 0~100 사이의 정수여야 합니다.', 400);
   return {
-    challengeId: id,
-    title: data.title || (id === CHALLENGE.challengeId ? CHALLENGE.title : id),
+    challengeId: snapshot.id,
+    title:
+      data.title || (snapshot.id === CHALLENGE.challengeId ? CHALLENGE.title : snapshot.id),
     text: data.text,
     referenceKeystrokes: data.referenceKeystrokes,
-    errorPenalty: data.errorPenalty ?? 20, // Older saved challenges used 20 points.
+    errorPenalty,
     practice: data.practice,
     enabled: data.enabled,
     deleted: data.deleted === true,
   };
 }
-export async function readChallenges(db) {
-  return (await allDocuments(db, 'challenges')).map((snapshot) => {
-    const data = snapshot.data();
-    return {
-      challengeId: snapshot.id,
-      title:
-        data.title || (snapshot.id === CHALLENGE.challengeId ? CHALLENGE.title : snapshot.id),
-      text: data.text,
-      referenceKeystrokes: data.referenceKeystrokes,
-      errorPenalty: data.errorPenalty ?? 20, // Older saved challenges used 20 points.
-      practice: data.practice,
-      enabled: data.enabled,
-      deleted: data.deleted === true,
-    };
-  });
-}
-export async function saveChallenge(db, input, previous, creationKey = crypto.randomUUID()) {
+export async function saveChallenge(db, input, previous, creationKey) {
   const title = normalizeText(input.title);
   const text = normalizeText(input.text).replace(/\s+/g, ' ');
-  const errorPenalty = input.errorPenalty;
+  const errorPenalty =
+    input.errorPenalty === undefined
+      ? previous
+        ? (previous.errorPenalty ?? 20)
+        : 3
+      : input.errorPenalty;
   if (!title || unicodeLength(title) > 80 || !text || unicodeLength(text) > 1000)
     throw new ClientError('제목은 1~80자, 문구는 1~1,000자로 입력해 주세요.', 400);
   if (!Number.isInteger(errorPenalty) || errorPenalty < 0 || errorPenalty > 100)
     throw new ClientError('오타 감점은 0~100 사이의 정수로 입력해 주세요.', 400);
-
-  // Changing the text, practice mode or penalty creates a new immutable scoring version.
-  if (
-    previous &&
-    previous.text === text &&
-    previous.practice === input.practice &&
-    previous.errorPenalty === errorPenalty
-  ) {
-    await withDeadline(updateDoc(doc(db, 'challenges', previous.challengeId), { title }));
-    return previous.challengeId;
-  }
-
-  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(creationKey))
+  if (typeof input.practice !== 'boolean')
+    throw new ClientError('연습 여부를 확인해 주세요.', 400);
+  const id = previous ? previous.challengeId : (creationKey ?? crypto.randomUUID());
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id))
     throw new ClientError('문구 ID가 올바르지 않습니다.', 400);
+  const data = {
+    title,
+    text,
+    practice: input.practice,
+    errorPenalty,
+    referenceKeystrokes: countKeystrokes(text),
+  };
+  const ref = doc(db, 'challenges', id);
   await withDeadline(
-    setDoc(doc(db, 'challenges', creationKey), {
-      title,
-      text,
-      practice: input.practice,
-      errorPenalty,
-      referenceKeystrokes: countKeystrokes(text),
-      enabled: previous?.enabled ?? true,
-      deleted: false,
-    }),
+    previous ? updateDoc(ref, data) : setDoc(ref, { ...data, enabled: true, deleted: false }),
   );
-  return creationKey;
+  return id;
 }
 export async function changeChallenge(db, id, patch) {
   await withDeadline(updateDoc(doc(db, 'challenges', id), patch));
 }
 export async function saveTyping(db, uid, id, input, creationKey = crypto.randomUUID()) {
   const challenge = await readChallenge(db, input.challengeId);
-  const computed = calculateScore(challenge.referenceKeystrokes, input.elapsedMs, input.errors, challenge.errorPenalty);
+  const computed = calculateScore(
+    challenge.referenceKeystrokes,
+    input.elapsedMs,
+    input.errors,
+    challenge.errorPenalty,
+  );
   const data = {
     ...input,
     ...computed,

@@ -12,7 +12,7 @@ export function countKeystrokes(text) {
   }, 0);
 }
 
-export function calculateScore(referenceKeystrokes, elapsedMs, errors, errorPenalty) {
+export function calculateScore(referenceKeystrokes, elapsedMs, errors, errorPenalty = 20) {
   if (
     !Number.isFinite(elapsedMs) ||
     elapsedMs <= 0 ||
@@ -36,7 +36,9 @@ export function compareScores(a, b) {
 
 function compareAttempts(a, b) {
   return (
-    compareScores(a, b) || a.completedAt.localeCompare(b.completedAt) || a.id.localeCompare(b.id)
+    compareScores(a, b) ||
+    a.completedAt.localeCompare(b.completedAt) ||
+    a.id.localeCompare(b.id)
   );
 }
 

@@ -1200,7 +1200,10 @@ function settingsView() {
       config?.activeChallengeId ?? '',
       challenges
         .filter((item) => item.enabled && !item.deleted)
-        .map((item) => [item.challengeId, item.title]),
+        .map((item) => [
+          item.challengeId,
+          `${item.title} · 오타당 ${item.errorPenalty ?? 20}점 감점`,
+        ]),
     )}
     <p class="muted">접수는 A 단계에서만 가능합니다.</p><button>저장</button></form>
     <form class="panel" id="session-policy"><h2>학생 로그인 설정</h2>
@@ -1235,7 +1238,7 @@ function renderChallenges() {
     .map(
       (
         item,
-      ) => `<article class="record"><strong>${html(item.title)}</strong> · ${item.practice ? '연습' : '공식'} · ${item.referenceKeystrokes}타 · 오타당 ${item.errorPenalty}점 감점${item.deleted ? ' · 삭제 보관' : ''}
+      ) => `<article class="record"><strong>${html(item.title)}</strong> · ${item.practice ? '연습' : '공식'} · ${item.referenceKeystrokes}타 · 오타당 ${item.errorPenalty ?? 20}점 감점${item.deleted ? ' · 삭제 보관' : ''}
     <p class="letter-content">${html(item.text)}</p><small>${html(item.challengeId)}</small><div class="actions">
     ${item.deleted ? `<button data-restore="${item.challengeId}">복원</button>` : `<button data-edit="${item.challengeId}">수정</button><button data-toggle="${item.challengeId}"${item.challengeId === config?.activeChallengeId ? ' disabled' : ''}>${item.enabled ? '접수 끄기' : '접수 켜기'}</button><button class="danger" data-delete="${item.challengeId}"${item.challengeId === config?.activeChallengeId ? ' disabled' : ''}>삭제</button>`}</div></article>`,
     )
@@ -1273,12 +1276,11 @@ function renderChallenges() {
 }
 function challengeEditor(challenge) {
   if (!confirmDiscard($('#editor'))) return;
-  let creationKey = crypto.randomUUID();
-  let previousIntent;
+  const creationKey = challenge ? undefined : crypto.randomUUID();
   $('#editor').innerHTML =
     `<form id="challenge-editor" class="panel"><h2>문구 ${challenge ? '수정' : '추가'}</h2>
-    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}${field('errorPenalty', '오타 1회당 감점', challenge?.errorPenalty ?? 3, 'number', 'required min="0" max="100" step="1"')}${checkbox('practice', '연습', challenge?.practice ?? true)}
-    <p class="muted">본문·연습 여부·감점 변경은 새 버전으로 저장됩니다. 사용 문구는 운영 설정에서 선택하세요.</p><p id="keys"></p><div class="actions"><button>저장</button><button type="button" id="close-editor">취소</button></div></form>`;
+    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}${field('errorPenalty', '오타 1회당 감점', challenge ? (challenge.errorPenalty ?? 20) : 3, 'number', 'required min="0" max="100" step="1"')}${checkbox('practice', '연습', challenge?.practice ?? true)}
+    <p id="keys"></p><div class="actions"><button>${challenge ? '수정 저장' : '추가'}</button><button type="button" id="close-editor">취소</button></div></form>`;
   $('#editor').scrollIntoView({ block: 'start' });
   $('#close-editor').onclick = closeEditor;
   $('#challenge-editor').oninput = (event) => {
@@ -1290,26 +1292,21 @@ function challengeEditor(challenge) {
       setStatus();
       return false;
     }
-    const intent = JSON.stringify([
-      normalizeText(values.text).replace(/\s+/g, ' '),
-      !!values.practice,
-      Number(values.errorPenalty),
-    ]);
-    if (previousIntent && intent !== previousIntent) creationKey = crypto.randomUUID();
-    previousIntent = intent;
-    const id = await saveChallenge(
-      (await adminContext()).db,
-      { title: values.title, text: values.text, practice: !!values.practice, errorPenalty: Number(values.errorPenalty) },
+    const { db } = await adminContext();
+    await saveChallenge(
+      db,
+      {
+        title: values.title,
+        text: values.text,
+        practice: !!values.practice,
+        errorPenalty: Number(values.errorPenalty),
+      },
       challenge,
       creationKey,
     );
-    challenges = await readChallenges((await adminContext()).db);
+    challenges = await readChallenges(db);
     settingsView();
-    setStatus(
-      challenge && id !== challenge.challengeId
-        ? '새 버전 저장 완료 · 사용 문구를 선택하세요.'
-        : '저장 완료',
-    );
+    setStatus(challenge ? '문구 수정 완료' : '문구 추가 완료');
   });
 }
 

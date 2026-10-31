@@ -1,6 +1,7 @@
 // Models: admins/{uid}: enabled + optional email (254), created_at; no self role writes.
 // settings/event: phase A/B/C, updated_at, optional independent switches and activeChallengeId.
-// challenges/{id}: text (1000), referenceKeystrokes (1..5000), practice/enabled, optional title/deleted.
+// challenges/{id}: text (1000), referenceKeystrokes (1..5000), practice/enabled,
+// optional title/deleted/errorPenalty (integer 0..100, missing legacy value: 20).
 // letters/{UUID}: private original + public edit/status/order, immutable owner/receipt/consent/timestamps.
 // publicLetters/{UUID}: id, nickname, content, order, sort_order; sanitized approved projection only.
 // typingResults/{UUID}: participant/name (30), challenge, time (<=1h), score, verification, prize, timestamps.
@@ -196,7 +197,7 @@ service cloud.firestore {
       allow read: if true;
       allow create: if admin() && valid(request.resource.data);
       allow update: if admin() && valid(request.resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'enabled', 'deleted'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'text', 'practice', 'referenceKeystrokes', 'errorPenalty', 'enabled', 'deleted'])
         && (request.resource.data.enabled || getAfter(/databases/$(database)/documents/settings/event).data.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0') != id);
       allow delete: if false;
     }
