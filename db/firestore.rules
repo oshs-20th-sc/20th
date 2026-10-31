@@ -186,9 +186,10 @@ service cloud.firestore {
       function valid(data) {
         return id.matches('[a-zA-Z0-9_-]{1,100}')
           && data.keys().hasAll(['text', 'referenceKeystrokes', 'practice', 'enabled'])
-          && data.keys().hasOnly(['text', 'referenceKeystrokes', 'practice', 'enabled', 'title', 'deleted'])
+          && data.keys().hasOnly(['text', 'referenceKeystrokes', 'practice', 'enabled', 'title', 'deleted', 'errorPenalty'])
           && text(data.text, 1, 1000) && data.referenceKeystrokes is int && data.referenceKeystrokes > 0
           && data.referenceKeystrokes <= 5000 && data.practice is bool && data.enabled is bool
+          && data.get('errorPenalty', 20) is int && data.get('errorPenalty', 20) >= 0 && data.get('errorPenalty', 20) <= 100
           && text(data.get('title', id), 1, 100) && data.get('deleted', false) is bool
           && (!data.get('deleted', false) || !data.enabled);
       }
@@ -376,7 +377,7 @@ service cloud.firestore {
         let challenge = get(/databases/$(database)/documents/challenges/$(data.challengeId)).data;
         // Force floating division even when elapsedMs was stored as an integer.
         let calculated = challenge.referenceKeystrokes * 60000.0 / data.elapsedMs;
-        let rawScore = data.speed - data.errors * 20;
+        let rawScore = data.speed - data.errors * challenge.get('errorPenalty', 20);
         return challenge.practice == data.practice
           && data.speed is int && data.speed >= 0 && data.speed - 0.5 <= calculated && calculated < data.speed + 0.5
           && data.errors is int && data.errors >= 0 && data.errors <= 10000

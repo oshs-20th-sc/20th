@@ -978,6 +978,7 @@ function resultEditor(result) {
         challenge.referenceKeystrokes,
         Number(values.seconds) * 1000,
         Number(values.errors),
+        challenge.errorPenalty,
       );
       $('#score-preview').textContent = `${score.speed}타 · ${score.score}점`;
     } catch {
@@ -1234,7 +1235,7 @@ function renderChallenges() {
     .map(
       (
         item,
-      ) => `<article class="record"><strong>${html(item.title)}</strong> · ${item.practice ? '연습' : '공식'} · ${item.referenceKeystrokes}타${item.deleted ? ' · 삭제 보관' : ''}
+      ) => `<article class="record"><strong>${html(item.title)}</strong> · ${item.practice ? '연습' : '공식'} · ${item.referenceKeystrokes}타 · 오타당 ${item.errorPenalty}점 감점${item.deleted ? ' · 삭제 보관' : ''}
     <p class="letter-content">${html(item.text)}</p><small>${html(item.challengeId)}</small><div class="actions">
     ${item.deleted ? `<button data-restore="${item.challengeId}">복원</button>` : `<button data-edit="${item.challengeId}">수정</button><button data-toggle="${item.challengeId}"${item.challengeId === config?.activeChallengeId ? ' disabled' : ''}>${item.enabled ? '접수 끄기' : '접수 켜기'}</button><button class="danger" data-delete="${item.challengeId}"${item.challengeId === config?.activeChallengeId ? ' disabled' : ''}>삭제</button>`}</div></article>`,
     )
@@ -1276,8 +1277,8 @@ function challengeEditor(challenge) {
   let previousIntent;
   $('#editor').innerHTML =
     `<form id="challenge-editor" class="panel"><h2>문구 ${challenge ? '수정' : '추가'}</h2>
-    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}${checkbox('practice', '연습', challenge?.practice ?? true)}
-    <p class="muted">본문·연습 여부 변경은 새 버전으로 저장됩니다. 사용 문구는 운영 설정에서 선택하세요.</p><p id="keys"></p><div class="actions"><button>저장</button><button type="button" id="close-editor">취소</button></div></form>`;
+    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}${field('errorPenalty', '오타 1회당 감점', challenge?.errorPenalty ?? 3, 'number', 'required min="0" max="100" step="1"')}${checkbox('practice', '연습', challenge?.practice ?? true)}
+    <p class="muted">본문·연습 여부·감점 변경은 새 버전으로 저장됩니다. 사용 문구는 운영 설정에서 선택하세요.</p><p id="keys"></p><div class="actions"><button>저장</button><button type="button" id="close-editor">취소</button></div></form>`;
   $('#editor').scrollIntoView({ block: 'start' });
   $('#close-editor').onclick = closeEditor;
   $('#challenge-editor').oninput = (event) => {
@@ -1292,12 +1293,13 @@ function challengeEditor(challenge) {
     const intent = JSON.stringify([
       normalizeText(values.text).replace(/\s+/g, ' '),
       !!values.practice,
+      Number(values.errorPenalty),
     ]);
     if (previousIntent && intent !== previousIntent) creationKey = crypto.randomUUID();
     previousIntent = intent;
     const id = await saveChallenge(
       (await adminContext()).db,
-      { title: values.title, text: values.text, practice: !!values.practice },
+      { title: values.title, text: values.text, practice: !!values.practice, errorPenalty: Number(values.errorPenalty) },
       challenge,
       creationKey,
     );

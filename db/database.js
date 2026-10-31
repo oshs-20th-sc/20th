@@ -119,7 +119,7 @@ export function validateTypingResult(input, challenge = CHALLENGE) {
     input.elapsedMs > 3600000
   )
     throw new ClientError('타자 기록의 형식을 확인해 주세요.', 400, 'INVALID_RESULT');
-  const computed = calculateScore(challenge.referenceKeystrokes, input.elapsedMs, input.errors);
+  const computed = calculateScore(challenge.referenceKeystrokes, input.elapsedMs, input.errors, challenge.errorPenalty);
   if (input.speed !== computed.speed || input.score !== computed.score)
     throw new ClientError('타수와 최종 점수 계산이 일치하지 않습니다.', 400, 'INVALID_SCORE');
 }
@@ -706,6 +706,7 @@ export async function setEvent(db, phase, options) {
         tx.set(ref, {
           text: CHALLENGE.text,
           referenceKeystrokes: CHALLENGE.referenceKeystrokes,
+          errorPenalty: CHALLENGE.errorPenalty,
           practice: true,
           enabled: true,
         });
@@ -732,6 +733,7 @@ export async function readChallenge(db, id) {
     title: data.title || (id === CHALLENGE.challengeId ? CHALLENGE.title : id),
     text: data.text,
     referenceKeystrokes: data.referenceKeystrokes,
+    errorPenalty: data.errorPenalty ?? 20, // Older saved challenges used 20 points.
     practice: data.practice,
     enabled: data.enabled,
     deleted: data.deleted === true,
@@ -746,6 +748,7 @@ export async function readChallenges(db) {
         data.title || (snapshot.id === CHALLENGE.challengeId ? CHALLENGE.title : snapshot.id),
       text: data.text,
       referenceKeystrokes: data.referenceKeystrokes,
+      errorPenalty: data.errorPenalty ?? 20, // Older saved challenges used 20 points.
       practice: data.practice,
       enabled: data.enabled,
       deleted: data.deleted === true,
@@ -755,32 +758,44 @@ export async function readChallenges(db) {
 export async function saveChallenge(db, input, previous, creationKey = crypto.randomUUID()) {
   const title = normalizeText(input.title);
   const text = normalizeText(input.text).replace(/\s+/g, ' ');
+  const errorPenalty = input.errorPenalty;
   if (!title || unicodeLength(title) > 80 || !text || unicodeLength(text) > 1000)
     throw new ClientError('제목은 1~80자, 문구는 1~1,000자로 입력해 주세요.', 400);
-  const id =
-    previous && previous.text === text && previous.practice === input.practice
-      ? previous.challengeId
-      : creationKey;
-  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id))
+  if (!Number.isInteger(errorPenalty) || errorPenalty < 0 || errorPenalty > 100)
+    throw new ClientError('오타 감점은 0~100 사이의 정수로 입력해 주세요.', 400);
+
+  // Changing the text, practice mode or penalty creates a new immutable scoring version.
+  if (
+    previous &&
+    previous.text === text &&
+    previous.practice === input.practice &&
+    previous.errorPenalty === errorPenalty
+  ) {
+    await withDeadline(updateDoc(doc(db, 'challenges', previous.challengeId), { title }));
+    return previous.challengeId;
+  }
+
+  if (!/^[a-zA-Z0-9_-]{1,100}$/.test(creationKey))
     throw new ClientError('문구 ID가 올바르지 않습니다.', 400);
   await withDeadline(
-    setDoc(doc(db, 'challenges', id), {
+    setDoc(doc(db, 'challenges', creationKey), {
       title,
       text,
       practice: input.practice,
+      errorPenalty,
       referenceKeystrokes: countKeystrokes(text),
       enabled: previous?.enabled ?? true,
       deleted: false,
     }),
   );
-  return id;
+  return creationKey;
 }
 export async function changeChallenge(db, id, patch) {
   await withDeadline(updateDoc(doc(db, 'challenges', id), patch));
 }
 export async function saveTyping(db, uid, id, input, creationKey = crypto.randomUUID()) {
   const challenge = await readChallenge(db, input.challengeId);
-  const computed = calculateScore(challenge.referenceKeystrokes, input.elapsedMs, input.errors);
+  const computed = calculateScore(challenge.referenceKeystrokes, input.elapsedMs, input.errors, challenge.errorPenalty);
   const data = {
     ...input,
     ...computed,

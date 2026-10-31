@@ -12,19 +12,22 @@ export function countKeystrokes(text) {
   }, 0);
 }
 
-export function calculateScore(referenceKeystrokes, elapsedMs, errors) {
+export function calculateScore(referenceKeystrokes, elapsedMs, errors, errorPenalty) {
   if (
     !Number.isFinite(elapsedMs) ||
     elapsedMs <= 0 ||
     !Number.isInteger(errors) ||
     errors < 0 ||
     !Number.isInteger(referenceKeystrokes) ||
-    referenceKeystrokes <= 0
+    referenceKeystrokes <= 0 ||
+    !Number.isInteger(errorPenalty) ||
+    errorPenalty < 0 ||
+    errorPenalty > 100
   ) {
     throw new Error('타수 계산에 필요한 값이 올바르지 않습니다.');
   }
   const speed = Math.round((referenceKeystrokes * 60000) / elapsedMs);
-  return { speed, score: Math.max(0, speed - errors * 20) };
+  return { speed, score: Math.max(0, speed - errors * errorPenalty) };
 }
 
 export function compareScores(a, b) {
