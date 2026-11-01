@@ -206,6 +206,11 @@ export async function allDocuments(db, name) {
 export async function readLetters(db) {
   return (await allDocuments(db, 'letters')).map(decodeLetter);
 }
+export async function readLetter(db, id) {
+  if (!UUID_PATTERN.test(id)) throw new ClientError('글 ID를 확인하세요.', 400);
+  const saved = await withDeadline(getDoc(doc(db, 'letters', id)));
+  return saved.exists() ? decodeLetter(saved) : null;
+}
 function decodeLetter(snapshot) {
   const data = snapshot.data();
   return {
@@ -292,6 +297,11 @@ export async function readLettersPage(
 export async function readTyping(db) {
   return (await allDocuments(db, 'typingResults')).map(decodeTyping);
 }
+export async function readTypingResult(db, id) {
+  if (!UUID_PATTERN.test(id)) throw new ClientError('기록 ID를 확인하세요.', 400);
+  const saved = await withDeadline(getDoc(doc(db, 'typingResults', id)));
+  return saved.exists() ? decodeTyping(saved) : null;
+}
 function decodeTyping(snapshot) {
   const data = snapshot.data();
   return {
@@ -323,13 +333,13 @@ export async function readTypingPage(
     pageSize = 25,
   } = {},
 ) {
-  if (!version) return { items: [], cursor: null, hasNext: false };
+  if (!version && view !== 'attempts') return { items: [], cursor: null, hasNext: false };
   const term = normalizeText(search).toLocaleLowerCase();
   const matchingIds = new Set(participantIds);
   const ranking = view !== 'attempts';
   const size = Math.max(1, Math.min(100, pageSize));
   const constraints = [
-    where('challengeId', '==', version),
+    ...(version ? [where('challengeId', '==', version)] : []),
     ...(verification !== 'all' ? [where('verificationStatus', '==', verification)] : []),
     ...(ranking
       ? [
@@ -769,6 +779,11 @@ export async function saveChallenge(db, input, previous, creationKey) {
 }
 export async function changeChallenge(db, id, patch) {
   await withDeadline(updateDoc(doc(db, 'challenges', id), patch));
+}
+export async function deleteChallenge(db, id) {
+  if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(id))
+    throw new ClientError('문구 ID를 확인하세요.', 400);
+  await withDeadline(deleteDoc(doc(db, 'challenges', id)));
 }
 export async function saveTyping(db, uid, id, input, creationKey = crypto.randomUUID()) {
   const challenge = await readChallenge(db, input.challengeId);

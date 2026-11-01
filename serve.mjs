@@ -35,13 +35,6 @@ createServer(async (request, response) => {
       response.end();
       return;
     }
-    if (url.pathname === '/') {
-      response.writeHead(404, { 'Content-Type': types['.html'] });
-      response.end(
-        request.method === 'HEAD' ? undefined : await readFile(resolve(base, '404.html')),
-      );
-      return;
-    }
     if ((await stat(file)).isDirectory()) {
       if (!url.pathname.endsWith('/')) {
         response.writeHead(301, { Location: url.pathname + '/' + url.search });

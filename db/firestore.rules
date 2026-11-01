@@ -199,7 +199,8 @@ service cloud.firestore {
       allow update: if admin() && valid(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'text', 'practice', 'referenceKeystrokes', 'errorPenalty', 'enabled', 'deleted'])
         && (request.resource.data.enabled || getAfter(/databases/$(database)/documents/settings/event).data.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0') != id);
-      allow delete: if false;
+      allow delete: if admin() && (!existsAfter(/databases/$(database)/documents/settings/event)
+        || getAfter(/databases/$(database)/documents/settings/event).data.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0') != id);
     }
     match /rateLimits/{uid} {
       function shape() {
@@ -374,7 +375,7 @@ service cloud.firestore {
         || getAfter(/databases/$(database)/documents/letters/$(id)).data.status != 'approved');
     }
     match /typingResults/{id} {
-      function validScore(data) {
+      function calculatedScore(data) {
         let challenge = get(/databases/$(database)/documents/challenges/$(data.challengeId)).data;
         // Force floating division even when elapsedMs was stored as an integer.
         let calculated = challenge.referenceKeystrokes * 60000.0 / data.elapsedMs;
@@ -383,6 +384,16 @@ service cloud.firestore {
           && data.speed is int && data.speed >= 0 && data.speed - 0.5 <= calculated && calculated < data.speed + 0.5
           && data.errors is int && data.errors >= 0 && data.errors <= 10000
           && data.score is int && data.score == (rawScore > 0 ? rawScore : 0);
+      }
+      function validScore(data) {
+        // 삭제된 문구의 과거 점수는 그대로 두고 확인·상품 상태만 변경합니다.
+        return exists(/databases/$(database)/documents/challenges/$(data.challengeId))
+          ? calculatedScore(data)
+          : request.method == 'update' && admin()
+            && data.speed is int && data.speed >= 0
+            && data.errors is int && data.errors >= 0 && data.errors <= 10000
+            && data.score is int && data.score >= 0
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verificationStatus', 'prizeReceived', 'reviewed_at']);
       }
       function valid(data) {
         return data.keys().hasAll(['id', 'owner_uid', 'participantId', 'displayName', 'challengeId', 'elapsedMs', 'speed', 'errors', 'score', 'completedAt', 'prizeReceived', 'practice', 'verificationStatus', 'received_at', 'reviewed_at'])

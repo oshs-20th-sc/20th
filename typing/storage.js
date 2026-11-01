@@ -52,8 +52,14 @@ export async function listLocalResults() {
   }
 }
 
-export function resultsCsv(results, { rankedOnly = true } = {}) {
-  const records = rankedOnly ? rankResults(results) : rankedAttempts(results);
+export function resultsCsv(results, { rankedOnly = true, includeRank = true } = {}) {
+  const records = includeRank
+    ? rankedOnly
+      ? rankResults(results)
+      : rankedAttempts(results)
+    : [...results].sort((a, b) =>
+        (b.receivedAt || b.completedAt).localeCompare(a.receivedAt || a.completedAt),
+      );
   return toCsv([
     [
       '순위',
@@ -70,7 +76,7 @@ export function resultsCsv(results, { rankedOnly = true } = {}) {
       '운영진 확인',
     ],
     ...records.map((r) => [
-      r.rank,
+      includeRank ? r.rank : null,
       r.loginId || (/^[1-3][0-9]{4}$/.test(r.participantId) ? r.participantId : '미연결'),
       r.displayName,
       r.challengeId,

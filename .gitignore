@@ -6,6 +6,8 @@
 !/welcome/
 !/welcome/**
 !/admin.js
+!/admin/
+!/admin/**
 !/login.js
 !/db/
 !/db/**
@@ -13,6 +15,7 @@
 !/style.css
 !/serve.mjs
 !/404.html
+!/index.html
 !/.nojekyll
 !/.gitignore
 !/README.md

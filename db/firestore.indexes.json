@@ -85,6 +85,20 @@
     {
       "fields": [
         {
+          "fieldPath": "verificationStatus",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "received_at",
+          "order": "DESCENDING"
+        }
+      ],
+      "collectionGroup": "typingResults",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
           "fieldPath": "challengeId",
           "order": "ASCENDING"
         },
@@ -142,6 +156,34 @@
         }
       ],
       "collectionGroup": "typingResults",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "owner_uid",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ],
+      "collectionGroup": "letters",
+      "queryScope": "COLLECTION"
+    },
+    {
+      "fields": [
+        {
+          "fieldPath": "target_student_id",
+          "order": "ASCENDING"
+        },
+        {
+          "fieldPath": "created_at",
+          "order": "DESCENDING"
+        }
+      ],
+      "collectionGroup": "moderationLogs",
       "queryScope": "COLLECTION"
     },
     {
