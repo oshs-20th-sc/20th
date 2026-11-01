@@ -37,7 +37,7 @@ export function firebaseError(error) {
     return new ClientError('로그인 요청이 많습니다. 잠시 후 다시 시도해 주세요.', 429, code);
   if (code.includes('weak-password') || code.includes('password-does-not-meet-requirements'))
     return new ClientError(
-      '새 비밀번호가 너무 약합니다. 12자 이상으로 입력해 주세요.',
+      '새 비밀번호가 보안 요구사항을 충족하지 않습니다. 더 긴 비밀번호를 사용해 주세요.',
       400,
       code,
     );
@@ -405,6 +405,43 @@ export async function logoutStudent() {
   const { studentAuth } = await getClients();
   await mutateAuth(async () => {
     if (authIntents.student === generation) await authSdk.signOut(studentAuth);
+  });
+}
+export async function changeStudentPassword(currentPassword, nextPassword) {
+  if (
+    typeof nextPassword !== 'string' ||
+    nextPassword.length < 8 ||
+    nextPassword.length > 4096
+  )
+    throw new ClientError('새 비밀번호는 8~4096자로 입력해 주세요.', 400);
+  if (!currentPassword || currentPassword === nextPassword)
+    throw new ClientError('기존 비밀번호와 다른 새 비밀번호를 입력해 주세요.', 400);
+  const intent = { kind: 'student', generation: authIntents.student };
+  const { studentAuth } = await getClients();
+  const user = studentAuth.currentUser;
+  const profile = await studentSession();
+  if (!user?.email || !profile || profile.uid !== user.uid)
+    throw new ClientError('다시 로그인한 뒤 비밀번호를 변경해 주세요.', 401);
+  return mutateAuth(async () => {
+    const checkSession = () => {
+      requireCurrentLogin(intent);
+      if (studentAuth.currentUser !== user)
+        throw new ClientError('로그인 상태가 바뀌었습니다. 다시 로그인해 주세요.', 401);
+    };
+    checkSession();
+    try {
+      await authSdk.reauthenticateWithCredential(
+        user,
+        authSdk.EmailAuthProvider.credential(user.email, currentPassword),
+      );
+    } catch (error) {
+      if (['auth/invalid-credential', 'auth/wrong-password'].includes(error.code))
+        throw new ClientError('기존 비밀번호를 확인해 주세요.', 401, error.code);
+      throw firebaseError(error);
+    }
+    checkSession();
+    // Keep Auth changes serialized until the actual request finishes, including on slow networks.
+    await authSdk.updatePassword(user, nextPassword);
   });
 }
 export async function studentContext({ writing = false } = {}) {

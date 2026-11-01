@@ -2,6 +2,7 @@ import {
   loginAdmin,
   loginStudent,
   logoutStudent,
+  changeStudentPassword,
   getClients,
   watchStudentSession,
   watchSessionPolicy,
@@ -25,9 +26,12 @@ export function mountLogin({
   onLogout,
   canLogout = () => true,
   canAutoLogout = () => true,
+  canChangePassword = canAutoLogout,
 }) {
   let student = null;
   let busy = false;
+  let sessionVersion = 0;
+  let passwordChange = null;
   let policy = { boothMode: true, idleMinutes: 10 };
   let lastActivity = Date.now();
   let reason = '';
@@ -41,10 +45,36 @@ export function mountLogin({
     </form>
     <a id="admin-help" href="${html(localHref(adminPath))}" hidden>비밀번호 재설정</a>
   </section>
-  <div id="student-session" class="section-top" hidden><span id="student-name"></span><button id="student-logout" type="button">로그아웃</button></div>`;
+  <div id="student-session" class="section-top" hidden><span id="student-name"></span><div class="actions">
+    <button id="student-password" type="button" aria-expanded="false" aria-controls="password-panel">비밀번호 변경</button>
+    <button id="student-logout" type="button">로그아웃</button>
+  </div></div>
+  <section id="password-panel" class="panel" hidden>
+    <h2>비밀번호 변경</h2><form id="password-form">
+      <label>기존 비밀번호<input name="current" type="password" required maxlength="4096" autocomplete="current-password" /></label>
+      <label>새 비밀번호<input name="next" type="password" required minlength="8" maxlength="4096" autocomplete="new-password" /></label>
+      <label>새 비밀번호 확인<input name="confirm" type="password" required minlength="8" maxlength="4096" autocomplete="new-password" /></label>
+      <p class="muted">새 비밀번호는 8자 이상 입력해 주세요.</p>
+      <div class="actions"><button type="submit">변경</button><button id="password-cancel" type="button">취소</button></div>
+    </form>
+  </section>
+  <p id="password-message" role="status" hidden></p>`;
   const $ = (selector) => container.querySelector(selector);
   const form = $('#entry-form');
   const error = $('#login-error');
+  const passwordForm = $('#password-form');
+  const passwordMessage = $('#password-message');
+  function closePassword() {
+    passwordForm.reset();
+    $('#password-panel').hidden = true;
+    $('#student-password').setAttribute('aria-expanded', 'false');
+  }
+  function passwordNotice(message = '', failed = false) {
+    passwordMessage.textContent = message;
+    passwordMessage.hidden = !message;
+    passwordMessage.className = failed ? 'error' : '';
+    passwordMessage.setAttribute('role', failed ? 'alert' : 'status');
+  }
   function failure(value) {
     error.textContent = errorMessage(value);
     error.hidden = false;
@@ -58,6 +88,11 @@ export function mountLogin({
   }
   function show(value) {
     const previous = student;
+    if (previous?.uid !== value?.uid) {
+      sessionVersion++;
+      closePassword();
+      passwordNotice();
+    }
     student = value;
     $('#login-panel').hidden = !!value;
     $('#student-session').hidden = !value;
@@ -95,6 +130,8 @@ export function mountLogin({
     return setupPromise;
   }
   async function logout({ force = false, cause = '' } = {}) {
+    // A completed submission must still end the booth session during a password request.
+    if (force && passwordChange) await passwordChange.catch(() => {});
     if (busy || (!force && !canLogout())) return false;
     lock(true);
     reason = cause;
@@ -139,6 +176,63 @@ export function mountLogin({
     }
   });
   $('#student-logout').addEventListener('click', () => void logout());
+  $('#student-password').addEventListener('click', () => {
+    if (busy || !student) return;
+    passwordNotice();
+    if (!canChangePassword()) {
+      passwordNotice('진행 중인 작업을 마친 뒤 비밀번호를 변경해 주세요.', true);
+      return;
+    }
+    if (!$('#password-panel').hidden) {
+      closePassword();
+      return;
+    }
+    $('#password-panel').hidden = false;
+    $('#student-password').setAttribute('aria-expanded', 'true');
+    passwordForm.elements.current.focus();
+  });
+  $('#password-cancel').addEventListener('click', () => {
+    closePassword();
+    passwordNotice();
+    $('#student-password').focus();
+  });
+  passwordForm.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    if (busy || !student) return;
+    passwordNotice();
+    if (!canChangePassword()) {
+      passwordNotice('진행 중인 작업을 마친 뒤 비밀번호를 변경해 주세요.', true);
+      return;
+    }
+    if (passwordForm.elements.next.value !== passwordForm.elements.confirm.value) {
+      passwordNotice('새 비밀번호 확인이 일치하지 않습니다.', true);
+      passwordForm.elements.confirm.focus();
+      return;
+    }
+    const owner = sessionVersion;
+    lock(true);
+    try {
+      passwordChange = changeStudentPassword(
+        passwordForm.elements.current.value,
+        passwordForm.elements.next.value,
+      );
+      await passwordChange;
+      if (student && sessionVersion === owner) {
+        closePassword();
+        passwordNotice(
+          '비밀번호를 변경했습니다. 다음 로그인부터 새 비밀번호를 사용해 주세요.',
+        );
+        $('#student-password').focus();
+      }
+    } catch (value) {
+      if (student && sessionVersion === owner) passwordNotice(errorMessage(value), true);
+    } finally {
+      passwordChange = null;
+      passwordForm.reset();
+      lastActivity = Date.now();
+      lock(false);
+    }
+  });
   for (const event of ['pointerdown', 'keydown', 'touchstart'])
     document.addEventListener(
       event,
@@ -159,6 +253,8 @@ export function mountLogin({
   }, 5000);
   window.addEventListener('pagehide', () => {
     clearInterval(timer);
+    closePassword();
+    passwordNotice();
   });
   window.addEventListener('pageshow', (event) => {
     if (event.persisted) location.reload();
