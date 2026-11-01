@@ -1,4 +1,4 @@
-import { makePublicData, toCsv } from '../common.js';
+import { toCsv, validatePublicData } from '../common.js';
 import {
   collection,
   doc,
@@ -23,6 +23,7 @@ import { CHALLENGE } from '../typing/challenge.js';
 import { ClientError, withDeadline, adminContext, STUDENT_UID_PATTERN } from './firebase.js';
 export const RATE_LIMIT = 600;
 export const PAGE_SIZE = 100;
+export { readEvent, readPublicLetters, readPublicLetter } from './public.js';
 export async function payloadHash(payload) {
   const bytes = await crypto.subtle.digest(
     'SHA-256',
@@ -143,12 +144,15 @@ async function submissionStudent(db, uid, writing = false) {
   return student;
 }
 export async function submitTyping(db, uid, result, { asAdmin = false } = {}) {
+  const [student, challenge] = await Promise.all([
+    asAdmin ? null : submissionStudent(db, uid),
+    readChallenge(db, result.challengeId),
+  ]);
   if (!asAdmin) {
-    const student = await submissionStudent(db, uid);
     if (result.participantId !== uid || result.displayName !== student.student_name)
       throw new ClientError('로그인 계정과 참가 정보가 일치하지 않습니다.', 403);
   }
-  validateTypingResult(result, await readChallenge(db, result.challengeId));
+  validateTypingResult(result, challenge);
   const ownerUid = asAdmin && result.owner_uid ? result.owner_uid : uid;
   if (asAdmin && ownerUid !== uid) {
     if (!STUDENT_UID_PATTERN.test(ownerUid) || result.participantId !== ownerUid)
@@ -497,16 +501,20 @@ export async function saveLetter(db, uid, id, input, creationKey = crypto.random
   return decodeLetter(await withDeadline(getDoc(doc(db, 'letters', key))));
 }
 export async function reviewLetter(db, id, patch) {
+  await reviewLetterStatus(db, id, patch, await letterOperator(db));
+  return decodeLetter(await withDeadline(getDoc(doc(db, 'letters', id))));
+}
+async function reviewLetterStatus(db, id, patch, operatorUid) {
   if (!UUID_PATTERN.test(id) || !['pending', 'approved', 'rejected'].includes(patch.status))
     throw new ClientError('글과 검수 상태를 확인하세요.', 400);
-  const operatorUid = await letterOperator(db);
   const logId = crypto.randomUUID();
-  await withDeadline(
+  return withDeadline(
     runTransaction(db, async (tx) => {
       const ref = doc(db, 'letters', id);
       const saved = await tx.get(ref);
       if (!saved.exists()) throw new ClientError('글을 찾을 수 없습니다.', 404);
       const before = saved.data();
+      if (before.status === patch.status) return false;
       const after = {
         ...before,
         status: patch.status,
@@ -518,18 +526,18 @@ export async function reviewLetter(db, id, patch) {
       if (after.status === 'approved') tx.set(publicRef, publicLetter(id, after));
       else tx.delete(publicRef);
       writeLetterLog(tx, db, logId, id, operatorUid, 'review', before, after);
+      return true;
     }),
   );
-  return decodeLetter(await withDeadline(getDoc(doc(db, 'letters', id))));
 }
 export async function reviewLetters(db, ids, status) {
   if (!Array.isArray(ids) || ids.length > 100)
     throw new ClientError('한 번에 최대 100건을 선택하세요.', 400);
   let count = 0;
+  const operatorUid = await letterOperator(db);
   for (const id of new Set(ids)) {
     try {
-      await reviewLetter(db, id, { status });
-      count++;
+      if (await reviewLetterStatus(db, id, { status }, operatorUid)) count++;
     } catch (error) {
       throw new ClientError(
         `${count}건 처리 후 중단되었습니다. ${error.message}`,
@@ -632,46 +640,38 @@ export async function readLetterHistory(db, id, { cursor = null, pageSize = 20 }
   };
 }
 export async function synchronizePublicLetters(db) {
-  const letters = await readLetters(db);
-  let count = 0;
-  for (let offset = 0; offset < letters.length; offset += 8) {
+  const [letters, published] = await Promise.all([
+    readLetters(db),
+    allDocuments(db, 'publicLetters'),
+  ]);
+  const expected = new Map(
+    letters
+      .filter((letter) => letter.status === 'approved' && letter.consent_to_publish === 1)
+      .map((letter) => [letter.id, publicLetter(letter.id, letter)]),
+  );
+  const existing = new Map(published.map((snapshot) => [snapshot.id, snapshot.data()]));
+  const changes = [];
+  for (const [id, value] of expected) {
+    const saved = existing.get(id);
+    if (
+      !saved ||
+      Object.keys(saved).length !== Object.keys(value).length ||
+      Object.entries(value).some(([key, item]) => saved[key] !== item)
+    )
+      changes.push([id, value]);
+  }
+  for (const id of existing.keys()) if (!expected.has(id)) changes.push([id, null]);
+  // 작은 배치로 기존 보안 규칙의 문서 접근 한도를 지킵니다.
+  for (let offset = 0; offset < changes.length; offset += 8) {
     const batch = writeBatch(db);
-    for (const letter of letters.slice(offset, offset + 8)) {
-      const ref = doc(db, 'publicLetters', letter.id);
-      if (letter.status === 'approved' && letter.consent_to_publish === 1) {
-        batch.set(ref, publicLetter(letter.id, letter));
-        count++;
-      } else batch.delete(ref);
+    for (const [id, value] of changes.slice(offset, offset + 8)) {
+      const ref = doc(db, 'publicLetters', id);
+      if (value) batch.set(ref, value);
+      else batch.delete(ref);
     }
     await withDeadline(batch.commit());
   }
-  return count;
-}
-export async function readPublicLetters(db, cursor) {
-  const page = await withDeadline(
-    getDocs(
-      query(
-        collection(db, 'publicLetters'),
-        orderBy('sort_order'),
-        orderBy('__name__'),
-        ...(cursor ? [startAfter(cursor)] : []),
-        limit(21),
-      ),
-    ),
-  );
-  return {
-    letters: page.docs.slice(0, 20).map((snapshot) => {
-      const data = snapshot.data();
-      return {
-        id: snapshot.id,
-        nickname: data.nickname,
-        content: data.content,
-        order: data.order,
-      };
-    }),
-    cursor: page.docs[19],
-    hasNext: page.docs.length > 20,
-  };
+  return changes.length;
 }
 export async function reviewTyping(db, id, patch) {
   if (!UUID_PATTERN.test(id)) throw new ClientError('기록 ID가 올바르지 않습니다.', 400);
@@ -681,24 +681,6 @@ export async function reviewTyping(db, id, patch) {
       reviewed_at: serverTimestamp(),
     }),
   );
-}
-export async function readEvent(db) {
-  const snapshot = await withDeadline(getDoc(doc(db, 'settings', 'event')));
-  const phase = snapshot.data()?.phase;
-  if (!['A', 'B', 'C'].includes(phase))
-    throw new ClientError(
-      '운영 설정이 준비되지 않았습니다. 운영진에게 문의하세요.',
-      503,
-      'SETUP_REQUIRED',
-    );
-  return {
-    phase,
-    typingEnabled: phase === 'A' && snapshot.data()?.typingEnabled !== false,
-    submissionsEnabled: phase === 'A' && snapshot.data()?.submissionsEnabled !== false,
-    welcomeEnabled: snapshot.data()?.welcomeEnabled ?? phase === 'C',
-    activeChallengeId: snapshot.data()?.activeChallengeId || CHALLENGE.challengeId,
-    backend: 'firebase',
-  };
 }
 export async function setEvent(db, phase, options) {
   await withDeadline(
@@ -890,11 +872,33 @@ export async function createPrivateBackup(db) {
   };
 }
 export async function exportFirebase(scope, format) {
+  if (!(
+    (scope === 'public' && format === 'json') ||
+    (scope === 'all' && ['json', 'csv'].includes(format))
+  ))
+    throw new ClientError('내보내기 형식을 확인하세요.', 400);
   const { db } = await adminContext();
   let content;
-  if (scope === 'public')
-    content = JSON.stringify(makePublicData(await readLetters(db)), null, 2);
-  else if (format === 'csv') {
+  if (scope === 'public') {
+    const letters = (await allDocuments(db, 'publicLetters'))
+      .map((snapshot) => {
+        const data = snapshot.data();
+        return {
+          id: snapshot.id,
+          nickname: data.nickname,
+          content: data.content,
+          order: data.order,
+        };
+      })
+      .sort((a, b) => (a.order ?? 1000001) - (b.order ?? 1000001) || a.id.localeCompare(b.id));
+    const data = { schemaVersion: 1, publishedAt: new Date().toISOString(), letters };
+    if (!validatePublicData(data))
+      throw new ClientError(
+        '공개 글의 형식을 확인하세요. 공개 내용 동기화 후 다시 내려받으세요.',
+        400,
+      );
+    content = JSON.stringify(data, null, 2);
+  } else if (format === 'csv') {
     const letters = await readLetters(db);
     content = toCsv([
       [
@@ -928,7 +932,10 @@ export async function exportFirebase(scope, format) {
     content = JSON.stringify(await createPrivateBackup(db), null, 2);
   }
   return {
-    filename: `ohsung-${scope}-${new Date().toISOString().slice(0, 10)}.${format}`,
+    filename:
+      scope === 'public'
+        ? 'letters.json'
+        : `ohsung-${scope}-${new Date().toISOString().slice(0, 10)}.${format}`,
     content,
     mime: format === 'csv' ? 'text/csv;charset=utf-8' : 'application/json',
   };

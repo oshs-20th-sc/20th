@@ -481,7 +481,8 @@ function lettersView() {
     ${trash ? '<p class="muted">복원한 글은 검토 대기로 돌아갑니다.</p>' : `<div class="selection-bar"><label class="checkbox"><input type="checkbox" id="select-letters">이 페이지 선택</label><span id="selected-count">0건 선택</span><button id="approve-selected" disabled>선택 승인</button><button id="reject-selected" disabled>선택 제외</button></div>`}
     <div id="letter-list"></div><div id="pagination" class="actions"></div>
     <details class="panel"><summary>백업·내보내기</summary><div class="actions">
-      <button data-export="all:json">전체 JSON</button><button data-export="all:csv">글 CSV</button><button data-export="public:json">공개 JSON</button><button id="sync-public">기존 승인 글 반영</button></div></details>`;
+      <button data-export="all:json">전체 JSON</button><button data-export="all:csv">글 CSV</button><button data-export="public:json">입학식용 letters.json</button><button id="sync-public">공개 내용 동기화</button></div>
+      <p class="muted">letters.json을 welcome/에 넣고 배포하면 DB 없이 열람합니다. 공개 중단·수정도 파일을 바꾸거나 제거한 뒤 재배포해야 합니다.</p></details>`;
   $('#new-letter').onclick = () => letterEditor();
   $('#show-letter-history').onclick = () => toggleLetterHistory(null, $('#all-letter-history'));
   $('#reload').onclick = () => renderTab(true);
@@ -631,7 +632,7 @@ function changeLetterStatus(ids, status) {
     }
     await reloadLetters();
     if (failure) throw failure;
-    setStatus(`${typeof result === 'number' ? result : ids.length}건 ${labels[status]} 완료`);
+    setStatus(`${labels[status]} · 변경 ${typeof result === 'number' ? result : ids.length}건`);
   });
 }
 function cursorPagination(kind) {

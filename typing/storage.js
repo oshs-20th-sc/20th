@@ -1,4 +1,4 @@
-import { adminContext, studentContext, firebaseError } from '../db/firebase.js';
+import { adminContext, getClients, firebaseError } from '../db/firebase.js';
 import { submitTyping, readChallenge, validateTypingResult } from '../db/database.js';
 
 import { toCsv } from '../common.js';
@@ -97,10 +97,16 @@ export async function saveResult(result, asAdmin = false) {
     backupSaved = false;
   }
   try {
-    const context = asAdmin ? await adminContext() : await studentContext();
+    let context;
+    if (asAdmin) context = await adminContext();
+    else {
+      const { studentDb, studentAuth } = await getClients();
+      context = { db: studentDb, uid: studentAuth.currentUser?.uid };
+    }
     if (
       !asAdmin &&
-      (result.participantId !== context.uid ||
+      (!context.uid ||
+        result.participantId !== context.uid ||
         (result.owner_uid && result.owner_uid !== context.uid))
     )
       throw new Error('로그인 계정과 저장할 기록이 일치하지 않습니다. 운영진에게 문의하세요.');

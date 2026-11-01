@@ -1,4 +1,4 @@
-import { studentContext, errorMessage, getClients } from '../db/firebase.js';
+import { errorMessage, getClients } from '../db/firebase.js';
 import { readEvent, submitLetter } from '../db/database.js';
 import { normalizeText, unicodeLength, validateSubmission } from '../common.js';
 import { mountLogin } from '../login.js';
@@ -124,7 +124,8 @@ form.addEventListener('submit', async (event) => {
     if (version !== sessionVersion) return;
     pending ||= validated.value;
     updateControls();
-    const { db, uid } = await studentContext({ writing: true });
+    const { studentDb: db, studentAuth } = await getClients();
+    const uid = studentAuth.currentUser?.uid;
     if (version !== sessionVersion || uid !== expectedUid)
       throw new Error('로그인 계정이 변경되었습니다. 다시 입력하세요.');
     const receipt = await submitLetter(db, uid, pending);
