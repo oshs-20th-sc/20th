@@ -41,6 +41,14 @@ import { recordsView } from './admin/typing.js';
 import { settingsView } from './admin/settings.js';
 import { accountView } from './admin/account.js';
 
+const CURRENT_STUDENT_NUMBER = /^[1-3][0-9]{4}$/;
+
+function isRecordTypingEntry(item) {
+  return item?.entryMode === 'record' ||
+    item?.entry_mode === 'record' ||
+    CURRENT_STUDENT_NUMBER.test(item?.participantId ?? '');
+}
+
 function applySession(next) {
   const entering = !state.session.authenticated || next.uid !== state.session.uid;
   if (!next.authenticated || next.uid !== state.session.uid) {
@@ -186,10 +194,15 @@ async function renderTab(forceStudents = false) {
       const matched = await findStudentsByLogin(db, queryText);
       const page = await readTypingPage(db, {
         ...state.resultFilter,
-        participantIds: matched.map((item) => item.student_id),
+        participantIds: [
+          ...matched.map((item) => item.student_id),
+          ...(CURRENT_STUDENT_NUMBER.test(queryText) ? [queryText] : []),
+        ],
         cursor: state.resultCursors[state.resultPage - 1],
       });
-      const ids = [...new Set(page.items.map((item) => item.participantId))];
+      const ids = [...new Set(page.items
+        .filter((item) => !isRecordTypingEntry(item))
+        .map((item) => item.participantId))];
       const known = matched.filter((student) => ids.includes(student.student_id));
       const missing = ids.filter((id) => !known.some((student) => student.student_id === id));
       loaded = [page, versions, [...known, ...(await readStudentsByIds(db, missing))]];

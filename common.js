@@ -1,13 +1,31 @@
-export const CONTENT_LIMITS = {
-  min: 10,
-  max: 700,
-};
+// Leave room under Firestore's 1 MiB limit for original/published text in
+// both before/after audit snapshots, plus metadata.
+export const MAX_CONTENT_BYTES = 131072;
 export const NICKNAME_MAX = 30;
 export const unicodeLength = (value) => Array.from(value).length;
 export const UUID_PATTERN =
   /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export function normalizeText(value) {
   return value.replace(/\r\n?/g, '\n').normalize('NFC').trim();
+}
+export function validateParticipant(input) {
+  if (!input || typeof input !== 'object')
+    return { error: '학번과 이름을 입력해 주세요.' };
+  const rawStudentNumber = input.studentNumber;
+  const rawName = input.name;
+  if (typeof rawStudentNumber !== 'string' || typeof rawName !== 'string')
+    return { error: '학번과 이름을 입력해 주세요.' };
+  const studentNumber = rawStudentNumber.normalize('NFKC').trim();
+  const name = rawName.normalize('NFKC').normalize('NFC').trim();
+  if (!/^[1-3][0-9]{4}$/.test(studentNumber))
+    return { error: '학번은 현재 학년을 포함한 숫자 5자리로 입력해 주세요.' };
+  if (
+    unicodeLength(name) < 1 ||
+    unicodeLength(name) > 30 ||
+    /[\u0000-\u001f\u007f-\u009f]/.test(name)
+  )
+    return { error: '이름은 줄바꿈 없이 1~30자로 입력해 주세요.' };
+  return { value: { studentNumber, name } };
 }
 export function validateSubmission(input) {
   if (!input || typeof input !== 'object')
@@ -25,12 +43,9 @@ export function validateSubmission(input) {
   }
   const content = normalizeText(data.content);
   const nickname = normalizeText(data.nickname ?? '');
-  const length = unicodeLength(content);
-  if (length < CONTENT_LIMITS.min || length > CONTENT_LIMITS.max) {
-    return {
-      error: `본문을 ${CONTENT_LIMITS.min}~${CONTENT_LIMITS.max}자로 작성해 주세요.`,
-    };
-  }
+  if (!content) return { error: '본문을 입력해 주세요.' };
+  if (new TextEncoder().encode(content).byteLength > MAX_CONTENT_BYTES)
+    return { error: '본문이 저장 가능한 크기를 넘었습니다. 내용을 줄여 주세요.' };
   if (unicodeLength(nickname) > NICKNAME_MAX || nickname.includes('\n'))
     return {
       error: '별명은 줄바꿈 없이 30자 이내로 입력해 주세요.',
@@ -43,13 +58,23 @@ export function validateSubmission(input) {
     return {
       error: '접수 요청 정보가 올바르지 않습니다. 새 글 작성을 눌러 주세요.',
     };
+  const value = {
+    content,
+    nickname,
+    consentToPublish: true,
+    submissionKey: data.submissionKey,
+  };
+  if (data.studentNumber !== undefined || data.name !== undefined) {
+    const participant = validateParticipant({
+      studentNumber: data.studentNumber,
+      name: data.name,
+    });
+    if (!participant.value) return participant;
+    value.studentNumber = participant.value.studentNumber;
+    value.name = participant.value.name;
+  }
   return {
-    value: {
-      content,
-      nickname,
-      consentToPublish: true,
-      submissionKey: data.submissionKey,
-    },
+    value,
   };
 }
 export function csvCell(value) {
@@ -135,7 +160,7 @@ export function validatePublicData(input) {
       unicodeLength(l.nickname) <= 30 &&
       typeof l.content === 'string' &&
       normalizeText(l.content).length > 0 &&
-      unicodeLength(l.content) <= 700 &&
+      new TextEncoder().encode(l.content).byteLength <= MAX_CONTENT_BYTES &&
       (l.order === null || (Number.isInteger(l.order) && l.order >= 0))
     );
   });

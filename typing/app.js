@@ -1,4 +1,4 @@
-import { getClients, errorMessage } from '../db/firebase.js';
+import { getPublicDb, errorMessage } from '../db/firebase.js';
 import { readEvent, readChallenge } from '../db/database.js';
 import { mountLogin } from '../login.js';
 import { downloadFile } from '../common.js';
@@ -9,7 +9,7 @@ import {
   compositionEnd,
   isComplete,
 } from './engine.js';
-import { calculateScore } from './scoring.js';
+import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js';
 import { saveResult } from './storage.js';
 
 const elements = Object.fromEntries(
@@ -84,7 +84,7 @@ function transition(next) {
 function showChallenge(current) {
   elements['challenge-title'].textContent = current.title;
   elements['reference-keys'].textContent = current.referenceKeystrokes;
-  elements['error-penalty'].textContent = current.errorPenalty ?? 20;
+  elements['error-penalty'].textContent = EVENT_ERROR_PENALTY;
   elements.challenge.setAttribute('aria-label', `입력할 문구: ${current.text}`);
   spans = Array.from(current.text, (character) => {
     const span = document.createElement('span');
@@ -124,7 +124,7 @@ async function refresh() {
   elements.reload.hidden = true;
   updateControls();
   try {
-    const { deviceDb } = await getClients();
+    const deviceDb = await getPublicDb();
     const nextConfig = await readEvent(deviceDb);
     const nextChallenge = await readChallenge(deviceDb, nextConfig.activeChallengeId);
     config = nextConfig;
@@ -167,6 +167,9 @@ async function persist(record) {
     needsBackup = false;
     transition('saved');
     message('저장 완료');
+    participant = null;
+    result = null;
+    login.finish();
   } catch (reason) {
     if (version === sessionVersion) {
       needsBackup = reason.backupSaved === false;
@@ -196,16 +199,17 @@ function process(value, endedComposition = false) {
   elapsed = Math.max(1, performance.now() - startedAt);
   result = {
     id: crypto.randomUUID(),
-    participantId: participant.studentId,
+    participantId: participant.studentNumber,
     displayName: participant.name,
-    owner_uid: participant.uid,
+    owner_uid: null,
+    entry_mode: 'record',
     challengeId: attempt.challengeId,
     elapsedMs: elapsed,
     ...calculateScore(
       attempt.referenceKeystrokes,
       elapsed,
       engine.errors,
-      attempt.errorPenalty,
+      EVENT_ERROR_PENALTY,
     ),
     errors: engine.errors,
     completedAt: new Date().toISOString(),
@@ -239,7 +243,7 @@ async function prepareAttempt() {
       message('현재 접수할 수 없습니다.', true);
       return;
     }
-    attempt = { ...current.challenge };
+    attempt = { ...current.challenge, errorPenalty: EVENT_ERROR_PENALTY };
     engine = initialInputState();
     startedAt = null;
     elapsed = 0;
@@ -300,7 +304,7 @@ elements.retry.addEventListener('click', () => {
 elements.rescue.addEventListener('click', async () => {
   if (!result || !needsBackup) return;
   try {
-    const { projectId } = await getClients();
+    const projectId = (await getPublicDb()).app.options.projectId;
     downloadFile(
       `typing-${result.id}.json`,
       JSON.stringify(
@@ -338,11 +342,11 @@ function clearAttempt() {
   transition('ready');
   message('문구를 입력하면 측정이 시작됩니다.');
 }
-mountLogin({
+const login = mountLogin({
   container: document.querySelector('#login'),
   adminPath: './admin/',
   onStudent(student) {
-    const entering = !participant || participant.uid !== student.uid;
+    const entering = !participant || participant.sessionId !== student.sessionId;
     if (entering) sessionVersion++;
     participant = student;
     document.querySelector('#student-view').hidden = false;

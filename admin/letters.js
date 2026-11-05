@@ -39,7 +39,7 @@ export function lettersView() {
     `<div class="actions"><button id="new-letter">글 추가</button><button id="reload">새로고침</button><button id="show-letter-history">변경 이력</button></div>
     <section id="all-letter-history" class="panel" aria-label="글 변경 이력" hidden></section>
     <div id="editor"></div><form id="letter-filter" class="toolbar">
-      ${field('query', '본문·별명 검색', state.letterFilter.query)}${select('status', '상태', state.letterFilter.status, [['', '전체'], ...Object.entries(labels), ['trash', '휴지통']])}
+      ${field('query', '학번·이름·본문·별명 검색', state.letterFilter.query)}${select('status', '상태', state.letterFilter.status, [['', '전체'], ...Object.entries(labels), ['trash', '휴지통']])}
       ${select('sort', '작성일', state.letterFilter.sort, [
         ['desc', '최신순'],
         ['asc', '오래된 순'],
@@ -276,10 +276,14 @@ export function letterChanges(before, after) {
 }
 
 export function letterAuthor(letter) {
+  if (letter.student_number || letter.student_name)
+    return `학번 ${letter.student_number || '—'} · 이름 ${letter.student_name || '—'}`;
   const student = state.students.find((item) => item.student_id === letter.owner_uid);
   return student
     ? `작성 계정: ${student.login_id || '현재 학번 미연결'} ${student.student_name}`
-    : '명부 연결 전·관리자 작성 기록';
+    : letter.owner_uid
+      ? '기존 계정 글 · 명부 연결 전'
+      : '관리자 작성 기록';
 }
 
 export function letterEditor(letter) {

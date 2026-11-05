@@ -38,6 +38,18 @@ import { loadStudentRoster } from './students.js';
 import { renderTab } from './shared.js';
 import { state } from './state.js';
 
+const CURRENT_STUDENT_NUMBER = /^[1-3][0-9]{4}$/;
+
+function isRecordEntry(result) {
+  return result?.entryMode === 'record' ||
+    result?.entry_mode === 'record' ||
+    CURRENT_STUDENT_NUMBER.test(result?.participantId ?? '');
+}
+
+function errorPenalty(result, challenge) {
+  return !result || isRecordEntry(result) ? 3 : (challenge?.errorPenalty ?? 3);
+}
+
 export async function recordsView() {
   $('#view').innerHTML =
     `<div class="actions"><button id="new-result">추가</button><button id="reload">새로고침</button><button id="result-csv">CSV</button><button id="result-json">JSON</button></div>
@@ -156,7 +168,12 @@ export function scopedResults(records = state.results, roster = state.students) 
         (state.resultFilter.verification === 'all' ||
           item.verificationStatus === state.resultFilter.verification),
     )
-    .map((item) => ({ ...item, loginId: aliases.get(item.participantId) ?? null }));
+    .map((item) => ({
+      ...item,
+      loginId: isRecordEntry(item)
+        ? item.participantId
+        : (aliases.get(item.participantId) ?? null),
+    }));
 }
 
 export async function reloadResults() {
@@ -169,15 +186,29 @@ export async function reloadResults() {
 export function renderResults() {
   const records = scopedResults();
   const ranking = state.resultFilter.view !== 'attempts';
+  const officialCounts = new Map();
+  records.forEach((item) => {
+    if (!item.practice && CURRENT_STUDENT_NUMBER.test(item.participantId ?? '')) {
+      const key = `${item.challengeId}:${item.participantId}`;
+      officialCounts.set(key, (officialCounts.get(key) ?? 0) + 1);
+    }
+  });
   $('#result-list').innerHTML =
     `<table><caption>${ranking ? '학번별 최고 기록 · 점수 → 오타 → 시간' : '전체 시도 · 접수 최신순'}</caption><thead><tr>${ranking ? '<th>순위</th>' : ''}<th>참가자</th><th>점수</th><th>타수·오타</th><th>시간</th><th>확인</th><th>상품</th><th>편집</th></tr></thead><tbody>${
       records
         .map(
-          (item) => `<tr>
-    ${ranking ? `<td>${item.rank ?? '—'}${item.practice ? ' (연습)' : ''}</td>` : ''}<td>${html(item.displayName)}<small>${html(item.loginId || (/^[1-3][0-9]{4}$/.test(item.participantId) ? item.participantId : '미연결'))}</small></td><td>${item.score}</td><td>${item.speed} / ${item.errors}</td><td>${(item.elapsedMs / 1000).toFixed(2)}초</td>
+          (item) => {
+            const duplicateKey = `${item.challengeId}:${item.participantId}`;
+            const duplicate = !item.practice &&
+              (Boolean(item.duplicateOf) || (officialCounts.get(duplicateKey) ?? 0) > 1);
+            const identity = item.loginId || '미연결';
+            const identityNote = isRecordEntry(item) ? `${identity} · 직접 입력` : identity;
+            return `<tr>
+    ${ranking ? `<td>${item.rank ?? '—'}${item.practice ? ' (연습)' : ''}</td>` : ''}<td>${html(item.displayName)}<small>${html(identityNote)}${duplicate ? ' · 공식 학번 중복 확인' : ''}</small></td><td>${item.score}</td><td>${item.speed} / ${item.errors}</td><td>${(item.elapsedMs / 1000).toFixed(2)}초</td>
     <td>${select(`review-${item.id}`, '확인', item.verificationStatus ?? 'pending', Object.entries(verification))}</td>
     <td><button data-prize="${item.id}"${item.practice || item.verificationStatus !== 'verified' ? ' disabled' : ''}>${item.prizeReceived ? '수령' : '미수령'}</button></td>
-    <td><button data-edit="${item.id}"${state.challenges.some((challenge) => challenge.challengeId === item.challengeId) ? '' : ' disabled title="문구가 삭제되어 점수를 수정할 수 없습니다."'}>수정</button><button class="danger" data-delete="${item.id}">삭제</button></td></tr>`,
+    <td><button data-edit="${item.id}"${state.challenges.some((challenge) => challenge.challengeId === item.challengeId) ? '' : ' disabled title="문구가 삭제되어 점수를 수정할 수 없습니다."'}>수정</button><button class="danger" data-delete="${item.id}">삭제</button></td></tr>`;
+          },
         )
         .join('') ||
       `<tr><td colspan="${ranking ? 8 : 7}">${ranking && state.resultFilter.verification === 'rejected' ? '제외 기록은 전체 시도에서 확인할 수 있습니다.' : '기록 없음'}</td></tr>`
@@ -240,13 +271,21 @@ export function resultEditor(result) {
 
 export function openResultEditor(result) {
   const creationKey = crypto.randomUUID();
+  const recordEntry = !result || isRecordEntry(result);
   const linked = state.students.find((student) => student.student_id === result?.participantId);
-  const number =
-    linked?.login_id ||
-    (/^[1-3][0-9]{4}$/.test(result?.participantId ?? '') ? result.participantId : '');
+  const number = recordEntry
+    ? (result?.participantId ?? '')
+    : (linked?.login_id ?? '');
+  const currentChallenge = state.challenges.find(
+    (item) => item.challengeId === result?.challengeId,
+  );
+  const fixedOfficialNumber = Boolean(
+    result && recordEntry && currentChallenge && !currentChallenge.practice,
+  );
   $('#editor').innerHTML =
     `<form id="result-editor" class="panel"><h2>${result ? '기록 수정' : '기록 추가'}</h2>
-    <div class="form-grid">${field('studentNumber', '학번', number, 'text', `${result ? '' : 'required '}pattern="[1-3][0-9]{4}" maxlength="5"`)}${field('displayName', '이름', result?.displayName, 'text', 'required maxlength="30"')}</div>
+    <div class="form-grid">${field('studentNumber', '학번', number, 'text', `${recordEntry ? 'required ' : ''}pattern="[1-3][0-9]{4}" maxlength="5"${fixedOfficialNumber ? ' readonly' : ''}`)}${field('displayName', '이름', result?.displayName, 'text', 'required maxlength="30"')}</div>
+    ${fixedOfficialNumber ? '<small class="muted">공식 접수 학번은 변경할 수 없습니다.</small>' : ''}
     ${select(
       'challengeId',
       '문구',
@@ -261,6 +300,7 @@ export function openResultEditor(result) {
   const form = $('#result-editor');
   let studentLookup = 0;
   form.elements.studentNumber.addEventListener('change', async () => {
+    if (recordEntry) return;
     const number = form.elements.studentNumber.value;
     const lookup = ++studentLookup,
       sequence = state.viewSequence;
@@ -282,7 +322,7 @@ export function openResultEditor(result) {
     }
   });
   form.oninput = (event) => {
-    if (event.target.name === 'studentNumber') {
+    if (!recordEntry && event.target.name === 'studentNumber') {
       const selected = state.students.find(
         (item) => item.login_id === form.elements.studentNumber.value,
       );
@@ -295,7 +335,7 @@ export function openResultEditor(result) {
         challenge.referenceKeystrokes,
         Number(values.seconds) * 1000,
         Number(values.errors),
-        challenge.errorPenalty,
+        errorPenalty(result, challenge),
       );
       $('#score-preview').textContent = `${score.speed}타 · ${score.score}점`;
     } catch {
@@ -305,19 +345,29 @@ export function openResultEditor(result) {
   submit(form, async (values) => {
     const { db, uid } = await adminContext();
     const challenge = state.challenges.find((item) => item.challengeId === values.challengeId);
-    const student = values.studentNumber
+    const currentRecordEntry = !result || isRecordEntry(result);
+    const student = !currentRecordEntry && values.studentNumber
       ? await readStudentByLogin(db, values.studentNumber)
       : null;
-    if (values.studentNumber && !student)
+    if (currentRecordEntry && !CURRENT_STUDENT_NUMBER.test(values.studentNumber ?? ''))
+      throw new Error('학번은 현재 5자리로 입력하세요.');
+    if (!currentRecordEntry && values.studentNumber && !student)
       throw new Error('현재 학번이 연결된 학생을 선택하세요.');
-    if (!student && !result) throw new Error('학번을 확인하세요.');
+    if (!student && !currentRecordEntry && !result) throw new Error('학번을 확인하세요.');
     await saveTyping(
       db,
       uid,
       result?.id ?? null,
       {
-        participantId: student?.student_id ?? result.participantId,
-        displayName: student?.student_name ?? values.displayName,
+        ...(currentRecordEntry
+          ? { entry_mode: 'record', owner_uid: null }
+          : {}),
+        participantId: currentRecordEntry
+          ? values.studentNumber
+          : (student?.student_id ?? result.participantId),
+        displayName: currentRecordEntry
+          ? values.displayName
+          : (student?.student_name ?? values.displayName),
         challengeId: values.challengeId,
         elapsedMs: Number(values.seconds) * 1000,
         errors: Number(values.errors),

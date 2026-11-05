@@ -21,6 +21,7 @@ const legacy = [
 const current = [...legacy, 'students', 'moderationLogs'];
 const audited = [...current, 'letterTrash', 'letterLogs'];
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
+const officialClaim = /^official-20261123-[1-3][0-9]{4}$/;
 function validValue(value, depth = 0) {
   if (depth > 20) throw new Error('BACKUP_TOO_DEEP');
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
@@ -95,7 +96,7 @@ export function validateBackup(input) {
               ? ['event', 'sessionPolicy'].includes(id)
               : collection === 'challenges'
                 ? /^[a-zA-Z0-9_-]{1,100}$/.test(id)
-                : uuid.test(id);
+                : uuid.test(id) || (collection === 'receipts' && officialClaim.test(id));
       if (
         typeof id !== 'string' ||
         !validId ||
@@ -108,6 +109,15 @@ export function validateBackup(input) {
         throw new Error('INVALID_BACKUP_DOCUMENT');
       seen.add(id);
       validValue(row.data);
+      if (collection === 'receipts' && officialClaim.test(id)) {
+        if (
+          Object.keys(row.data).sort().join(',') !== 'created_at,kind,result_id,student_number' ||
+          row.data.kind !== 'typingEntry' || !uuid.test(row.data.result_id) ||
+          typeof row.data.student_number !== 'string' ||
+          id !== `official-20261123-${row.data.student_number}` ||
+          row.data.created_at?.__firestoreTimestamp !== true
+        ) throw new Error('INVALID_OFFICIAL_CLAIM');
+      }
       if (JSON.stringify(row.data).length > 900000) throw new Error('DOCUMENT_TOO_LARGE');
       records.push({ collection, id, data: row.data });
       if (records.length > 50000) throw new Error('BACKUP_TOO_LARGE');

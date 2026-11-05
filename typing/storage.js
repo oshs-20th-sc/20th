@@ -1,7 +1,7 @@
-import { adminContext, getClients, firebaseError } from '../db/firebase.js';
+import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js';
 import { submitTyping, readChallenge, validateTypingResult } from '../db/database.js';
 
-import { toCsv } from '../common.js';
+import { toCsv, validateParticipant } from '../common.js';
 import { rankResults, rankedAttempts } from './scoring.js';
 
 // Legacy storage identifier is intentionally stable so existing local records survive rebranding.
@@ -52,6 +52,20 @@ export async function listLocalResults() {
   }
 }
 
+async function removeLocalResult(id) {
+  const db = await openDatabase();
+  try {
+    await new Promise((resolve, reject) => {
+      const tx = db.transaction(STORE, 'readwrite');
+      tx.objectStore(STORE).delete(id);
+      tx.oncomplete = resolve;
+      tx.onerror = tx.onabort = () => reject(new Error('기기 기록 정리에 실패했습니다.'));
+    });
+  } finally {
+    db.close();
+  }
+}
+
 export function resultsCsv(results, { rankedOnly = true, includeRank = true } = {}) {
   const records = includeRank
     ? rankedOnly
@@ -74,6 +88,8 @@ export function resultsCsv(results, { rankedOnly = true, includeRank = true } = 
       '상품 수령',
       '연습 기록',
       '운영진 확인',
+      '참가 방식',
+      '중복 원본 기록',
     ],
     ...records.map((r) => [
       includeRank ? r.rank : null,
@@ -88,6 +104,8 @@ export function resultsCsv(results, { rankedOnly = true, includeRank = true } = 
       r.prizeReceived ? '수령' : '미수령',
       r.practice ? '연습' : '공식',
       r.verificationStatus ?? 'pending',
+      r.entryMode === 'record' || r.entry_mode === 'record' ? '학번·이름 입력' : '기존 계정',
+      r.duplicateOf || r.duplicate_of || '',
     ]),
   ]);
 }
@@ -103,22 +121,23 @@ export async function saveResult(result, asAdmin = false) {
     backupSaved = false;
   }
   try {
-    let context;
-    if (asAdmin) context = await adminContext();
-    else {
-      const { studentDb, studentAuth } = await getClients();
-      context = { db: studentDb, uid: studentAuth.currentUser?.uid };
+    let context, participant;
+    if (asAdmin) {
+      context = await adminContext();
+      participant = context.uid;
     }
-    if (
-      !asAdmin &&
-      (!context.uid ||
-        result.participantId !== context.uid ||
-        (result.owner_uid && result.owner_uid !== context.uid))
-    )
-      throw new Error('로그인 계정과 저장할 기록이 일치하지 않습니다. 운영진에게 문의하세요.');
-    await submitTyping(context.db, context.uid, result, { asAdmin });
+    else {
+      const checked = validateParticipant({ studentNumber: result.participantId, name: result.displayName });
+      if (!checked.value || result.entry_mode !== 'record' || result.owner_uid !== null)
+        throw new Error('참가 정보가 올바르지 않습니다. 기존 계정의 미전송 기록은 관리자에게 복구를 요청하세요.');
+      context = { db: await getPublicDb() };
+      participant = checked.value;
+    }
+    await submitTyping(context.db, participant, result, { asAdmin });
     try {
-      await saveLocalResult({ ...queued, syncState: 'synced', syncError: '' });
+      // 서버가 확인한 새 참가 기록은 기기에 남기지 않습니다. 실패 기록과 과거 보관함은 유지합니다.
+      if (queued.entry_mode === 'record') await removeLocalResult(queued.id);
+      else await saveLocalResult({ ...queued, syncState: 'synced', syncError: '' });
       backupSaved = true;
     } catch {
       backupSaved = false;

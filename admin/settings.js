@@ -43,10 +43,11 @@ export function settingsView() {
         .filter((item) => item.enabled && !item.deleted)
         .map((item) => [
           item.challengeId,
-          `${item.title} · 오타당 ${item.errorPenalty ?? 20}점 감점`,
+          `${item.title} · ${item.practice ? '연습' : '공식 · 행사 오타당 3점'}`,
         ]),
     )}
-    <p class="muted">접수는 A 단계에서만 가능합니다.</p><button>저장</button></form>
+    <p class="muted">행사일 2026. 11. 23.(월) · 점심시간 현장 참여</p>
+    <p class="muted">정확한 점심시간은 운영진 현장 안내에 따릅니다. 접수는 A 단계에서만 가능합니다.</p><button>저장</button></form>
     <form class="panel" id="session-policy"><h2>학생 로그인 설정</h2>
     ${checkbox('boothMode', '공용 기기 모드', state.sessionPolicy.boothMode)}
     ${field('idleMinutes', '미사용 로그아웃 (분)', state.sessionPolicy.idleMinutes, 'number', 'required min="1" max="120" step="1"')}
@@ -82,7 +83,8 @@ export function renderChallenges() {
     .map(
       (
         item,
-      ) => `<article class="record"><strong>${html(item.title)}</strong> · ${item.practice ? '연습' : '공식'} · ${item.referenceKeystrokes}타 · 오타당 ${item.errorPenalty ?? 20}점 감점
+      ) => `<article class="record"><strong>${html(item.title)}</strong> · ${item.practice ? '연습' : '공식'} · ${item.referenceKeystrokes}타 · 행사 오타 감점 3점
+    <small>기존 계정 기록 계산용 감점: ${item.errorPenalty ?? 3}점</small>
     <p class="letter-content">${html(item.text)}</p><small>${html(item.challengeId)}</small><div class="actions">
     <button data-edit="${item.challengeId}">수정</button><button data-toggle="${item.challengeId}"${item.challengeId === state.config?.activeChallengeId ? ' disabled' : ''}>${item.enabled ? '접수 끄기' : '접수 켜기'}</button><button class="danger" data-delete="${item.challengeId}"${item.challengeId === state.config?.activeChallengeId ? ' disabled' : ''}>영구 삭제</button></div></article>`,
     )
@@ -127,7 +129,8 @@ export function challengeEditor(challenge) {
   const creationKey = challenge ? undefined : crypto.randomUUID();
   $('#editor').innerHTML =
     `<form id="challenge-editor" class="panel"><h2>문구 ${challenge ? '수정' : '추가'}</h2>
-    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}${field('errorPenalty', '오타 1회당 감점', challenge ? (challenge.errorPenalty ?? 20) : 3, 'number', 'required min="0" max="100" step="1"')}${checkbox('practice', '연습', challenge?.practice ?? true)}
+    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}${field('errorPenalty', '기존 계정 기록 계산용 오타 감점', challenge ? (challenge.errorPenalty ?? 3) : 3, 'number', 'required min="0" max="100" step="1"')}${checkbox('practice', '연습', challenge?.practice ?? true)}
+    <p class="muted">학번 입력 방식의 공식 기록은 행사 기준인 오타당 3점으로 계산합니다.</p>
     <p id="keys"></p><div class="actions"><button>${challenge ? '수정 저장' : '추가'}</button><button type="button" id="close-editor">취소</button></div></form>`;
   $('#editor').scrollIntoView({ block: 'start' });
   $('#close-editor').onclick = closeEditor;

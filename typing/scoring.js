@@ -2,6 +2,7 @@ const MEDIAL_KEYS = [1, 1, 1, 1, 1, 1, 1, 1, 1, 2, 2, 2, 1, 1, 2, 2, 2, 1, 1, 2,
 const FINAL_KEYS = [
   0, 1, 1, 2, 1, 2, 2, 1, 1, 2, 2, 2, 2, 2, 2, 2, 1, 1, 2, 1, 1, 1, 1, 1, 1, 1, 1, 1,
 ];
+export const EVENT_ERROR_PENALTY = 3;
 
 /** Dubeolsik keys, excluding modifier keys. Spaces/punctuation each count once. */
 export function countKeystrokes(text) {
@@ -12,7 +13,7 @@ export function countKeystrokes(text) {
   }, 0);
 }
 
-export function calculateScore(referenceKeystrokes, elapsedMs, errors, errorPenalty = 20) {
+export function calculateScore(referenceKeystrokes, elapsedMs, errors, errorPenalty = EVENT_ERROR_PENALTY) {
   if (
     !Number.isFinite(elapsedMs) ||
     elapsedMs <= 0 ||

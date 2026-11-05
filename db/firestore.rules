@@ -1,11 +1,12 @@
 // Models: admins/{uid}: enabled + optional email (254), created_at; no self role writes.
 // settings/event: phase A/B/C, updated_at, optional independent switches and activeChallengeId.
 // challenges/{id}: text (1000), referenceKeystrokes (1..5000), practice/enabled,
-// optional title/deleted/errorPenalty (integer 0..100, missing legacy value: 20).
-// letters/{UUID}: private original + public edit/status/order, immutable owner/receipt/consent/timestamps.
+// optional title/deleted/errorPenalty (integer 0..100, missing value for new validation: 3).
+// letters/{UUID}: legacy UID rows or E-mode private original + public edit/status/order; student identity is never projected.
 // publicLetters/{UUID}: id, nickname, content, order, sort_order; sanitized approved projection only.
-// typingResults/{UUID}: participant/name (30), challenge, time (<=1h), score, verification, prize, timestamps.
-// receipts/{UUID} and rateLimits/{uid}: immutable receipt metadata and atomic device throttling.
+// typingResults/{UUID}: legacy UID rows or E-mode private school number/name, score, verification and prize state.
+// receipts/{UUID}: immutable receipt metadata; official-20261123-{school5} records are private one-time claims.
+// rateLimits/{uid}: legacy authenticated-submission throttling only.
 // students/{opaque 20-character UID}: student_id is the same internal UID (not a school number).
 // student_name, admission_year, is_active, write_blocked,
 // blocked_until timestamp/null, created_at/updated_at timestamps; optional login_id current5digits, last_moderation_id UUID.
@@ -24,36 +25,63 @@ service cloud.firestore {
       return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
         && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.enabled == true;
     }
-    function student() {
-      return signedIn() && studentUid(request.auth.uid)
-        && request.auth.token.firebase.sign_in_provider == 'password'
-        && exists(/databases/$(database)/documents/students/$(request.auth.uid))
-        && get(/databases/$(database)/documents/students/$(request.auth.uid)).data.student_id == request.auth.uid
-        && get(/databases/$(database)/documents/students/$(request.auth.uid)).data.is_active == true
-        && (request.auth.uid.matches('[0-9]{7}')
-          || studentAlias(get(/databases/$(database)/documents/students/$(request.auth.uid)).data));
-    }
     function studentUid(value) {
       return value is string && (value.matches('[A-Za-z0-9_-]{20}') || value.matches('[0-9]{7}'));
-    }
-    function studentAlias(data) {
-      let loginId = data.get('login_id', '');
-      let email = request.auth.token.get('email', '');
-      return loginId is string && loginId.matches('[1-3][0-9]{4}') && email is string
-        && email.matches(loginId + '@students[.][A-Za-z0-9-]+[.]invalid');
-    }
-    function mayWriteLetter() {
-      let data = get(/databases/$(database)/documents/students/$(request.auth.uid)).data;
-      return student() && (!data.write_blocked || (data.blocked_until != null && data.blocked_until <= request.time));
-    }
-    function studentTyping(data) {
-      return student() && data.participantId == request.auth.uid
-        && data.displayName == get(/databases/$(database)/documents/students/$(request.auth.uid)).data.student_name;
     }
     function uuid(value) { return value is string && value.matches('[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'); }
     function eventOpen(kind) {
       let data = get(/databases/$(database)/documents/settings/event).data;
       return data.phase == 'A' && (kind == 'letter' ? data.get('submissionsEnabled', true) : data.get('typingEnabled', true));
+    }
+    function currentChallenge(data) {
+      let event = get(/databases/$(database)/documents/settings/event).data;
+      return data.challengeId == event.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0');
+    }
+    function enabledChallenge(id) {
+      let path = /databases/$(database)/documents/challenges/$(id);
+      return exists(path) && get(path).data.enabled == true && get(path).data.get('deleted', false) == false;
+    }
+    function participantNumber(value) {
+      return value is string && value.matches('[1-3][0-9]{4}');
+    }
+    function participantName(value) {
+      return text(value, 1, 30) && !value.matches('(?s).*\\n.*');
+    }
+    function recordLetterContent(value) {
+      // The browser and Rules use the same UTF-8 byte ceiling, not a character count.
+      return value is string && value.toUtf8().size() > 0 && value.toUtf8().size() <= 131072
+        && value.trim() == value;
+    }
+    function recordReceipt(id, kind) {
+      let receipt = getAfter(/databases/$(database)/documents/receipts/$(id)).data;
+      let target = kind == 'letter'
+        ? getAfter(/databases/$(database)/documents/letters/$(id)).data
+        : getAfter(/databases/$(database)/documents/typingResults/$(id)).data;
+      let targetTimestamp = kind == 'letter' ? target.created_at : target.received_at;
+      return receipt.id == id && receipt.entry_mode == 'record' && receipt.owner_uid == null
+        && receipt.kind == kind && receipt.created_at == request.time
+        && receipt.payload_hash is string && receipt.payload_hash.matches('[0-9a-f]{64}')
+        && target.entry_mode == 'record' && target.owner_uid == null && targetTimestamp == request.time;
+    }
+    function officialClaimId(number) { return 'official-20261123-' + number; }
+    function officialClaimReady(id, data) {
+      let path = /databases/$(database)/documents/receipts/$(officialClaimId(data.participantId));
+      let claim = getAfter(path).data;
+      return claim.kind == 'typingEntry' && claim.student_number == data.participantId
+        && (claim.result_id == id || (admin() && data.get('duplicate_of', '') == claim.result_id));
+    }
+    function validOfficialClaim(id, data, adminRecovery) {
+      let resultPath = /databases/$(database)/documents/typingResults/$(data.result_id);
+      let result = getAfter(resultPath).data;
+      return id == officialClaimId(data.student_number) && data.kind == 'typingEntry'
+        && data.keys().hasAll(['kind', 'result_id', 'student_number', 'created_at'])
+        && data.keys().hasOnly(['kind', 'result_id', 'student_number', 'created_at'])
+        && uuid(data.result_id) && participantNumber(data.student_number)
+        && data.created_at == request.time && result.entry_mode == 'record'
+        && result.owner_uid == null && result.practice == false
+        && result.participantId == data.student_number && result.received_at is timestamp
+        && (result.received_at == request.time || (adminRecovery && admin()
+          && exists(resultPath) && get(resultPath).data.entry_mode == 'record'));
     }
     function welcomeOpen() {
       let data = get(/databases/$(database)/documents/settings/event).data;
@@ -115,7 +143,7 @@ service cloud.firestore {
         && moderationChange(log.action, before, after);
     }
     match /students/{id} {
-      allow get: if admin() || (signedIn() && request.auth.uid == id && request.auth.token.firebase.sign_in_provider == 'password');
+      allow get: if admin();
       allow list: if admin();
       // Provisioning and password operations use the server Admin SDK only.
       allow create, delete: if false;
@@ -205,12 +233,12 @@ service cloud.firestore {
     match /rateLimits/{uid} {
       function shape() {
         let data = request.resource.data;
-        return (admin() || student()) && uid == request.auth.uid && data.keys().hasOnly(['window_start', 'count', 'last_write_at', 'last_event_id', 'kind'])
+        return admin() && uid == request.auth.uid && data.keys().hasOnly(['window_start', 'count', 'last_write_at', 'last_event_id', 'kind'])
           && data.count is int && data.count > 0 && data.count <= 600 && data.window_start is timestamp
           && data.last_write_at == request.time && uuid(data.last_event_id) && data.kind in ['letter', 'typing']
           && newReceipt(data.last_event_id, data.kind);
       }
-      allow get: if signedIn() && uid == request.auth.uid;
+      allow get: if admin() && uid == request.auth.uid;
       allow create: if shape() && request.resource.data.window_start == request.time && request.resource.data.count == 1;
       allow update: if shape() && (
         (request.time - resource.data.window_start >= duration.value(60, 's')
@@ -222,20 +250,40 @@ service cloud.firestore {
     }
     match /receipts/{id} {
       function targetExists(data) {
-        return data.kind == 'letter'
+        return data.get('entry_mode', '') == 'record'
+          ? recordReceipt(id, data.kind)
+          : data.kind == 'letter'
           ? getAfter(/databases/$(database)/documents/letters/$(id)).data.created_at == request.time
             && getAfter(/databases/$(database)/documents/letters/$(id)).data.owner_uid == data.owner_uid
           : getAfter(/databases/$(database)/documents/typingResults/$(id)).data.received_at == request.time
             && getAfter(/databases/$(database)/documents/typingResults/$(id)).data.owner_uid == data.owner_uid;
       }
       // Receipts contain only receipt metadata, never a student's original text or name.
-      allow get: if signedIn() && (!exists(/databases/$(database)/documents/receipts/$(id)) || resource.data.owner_uid == request.auth.uid || admin());
-      allow create: if (admin() || student()) && uuid(id) && request.resource.data.keys().hasOnly(['id', 'owner_uid', 'kind', 'payload_hash', 'created_at'])
+      allow get: if admin()
+        || (!exists(/databases/$(database)/documents/receipts/$(id)) && uuid(id))
+        || (exists(/databases/$(database)/documents/receipts/$(id))
+          && resource.data.get('entry_mode', '') == 'record' && resource.data.owner_uid == null
+          && resource.data.keys().hasAll(['id', 'owner_uid', 'entry_mode', 'kind', 'payload_hash', 'created_at'])
+          && resource.data.keys().hasOnly(['id', 'owner_uid', 'entry_mode', 'kind', 'payload_hash', 'created_at']))
+        || (signedIn() && exists(/databases/$(database)/documents/receipts/$(id))
+          && resource.data.owner_uid == request.auth.uid);
+      allow create: if (request.resource.data.get('entry_mode', '') == 'record'
+          && (admin() || !signedIn()) && uuid(id)
+          && request.resource.data.keys().hasOnly(['id', 'owner_uid', 'entry_mode', 'kind', 'payload_hash', 'created_at'])
+          && request.resource.data.entry_mode == 'record' && request.resource.data.owner_uid == null
+          && request.resource.data.id == id && request.resource.data.kind in ['letter', 'typing']
+          && request.resource.data.created_at == request.time
+          && request.resource.data.payload_hash is string
+          && request.resource.data.payload_hash.matches('[0-9a-f]{64}')
+          && targetExists(request.resource.data))
+        || (request.resource.data.get('entry_mode', '') != 'record' && admin() && uuid(id)
+        && request.resource.data.keys().hasOnly(['id', 'owner_uid', 'kind', 'payload_hash', 'created_at'])
         && request.resource.data.id == id && (request.resource.data.owner_uid == request.auth.uid
           || (request.resource.data.kind == 'typing' && recoveryOwner(getAfter(/databases/$(database)/documents/typingResults/$(id)).data)))
         && request.resource.data.kind in ['letter', 'typing'] && request.resource.data.created_at == request.time
         && request.resource.data.payload_hash is string && request.resource.data.payload_hash.matches('[0-9a-f]{64}')
-        && targetExists(request.resource.data) && freshRate(id, request.resource.data.kind);
+        && targetExists(request.resource.data) && freshRate(id, request.resource.data.kind))
+        || validOfficialClaim(id, request.resource.data, true) && (admin() || !signedIn());
       allow list: if admin();
       allow update, delete: if false;
     }
@@ -243,16 +291,26 @@ service cloud.firestore {
       return value is string && value.matches('[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-restore|-purge)?');
     }
     function validLetter(data, id) {
-        return data.keys().hasAll(['id', 'owner_uid', 'nickname', 'content', 'published_content', 'consent_to_publish', 'status', 'publish_order', 'submission_key', 'created_at', 'reviewed_at'])
-          && data.keys().hasOnly(['id', 'owner_uid', 'nickname', 'content', 'published_content', 'consent_to_publish', 'status', 'publish_order', 'submission_key', 'created_at', 'reviewed_at', 'last_history_id'])
-          && data.id == id && uuid(id) && text(data.content, 10, 700)
-          && text(data.owner_uid, 1, 128) && data.created_at is timestamp && (data.reviewed_at == null || data.reviewed_at is timestamp)
-          && (data.nickname == null || (text(data.nickname, 1, 30) && !data.nickname.matches('(?s).*\\n.*')))
-          && data.consent_to_publish == 1 && data.submission_key == id
-          && data.status in ['pending', 'approved', 'rejected']
-          && (data.published_content == null || text(data.published_content, 1, 700))
-          && (data.publish_order == null || (data.publish_order is int && data.publish_order >= 0 && data.publish_order <= 1000000))
-          && (!('last_history_id' in data) || historyId(data.last_history_id));
+      let required = ['id', 'owner_uid', 'nickname', 'content', 'published_content', 'consent_to_publish', 'status', 'publish_order', 'submission_key', 'created_at', 'reviewed_at'];
+      let allowed = ['id', 'owner_uid', 'nickname', 'content', 'published_content', 'consent_to_publish', 'status', 'publish_order', 'submission_key', 'created_at', 'reviewed_at', 'last_history_id', 'entry_mode', 'student_number', 'student_name'];
+      let recordMode = data.get('entry_mode', '') == 'record'
+        && data.owner_uid == null && participantNumber(data.student_number)
+        && participantName(data.student_name) && recordLetterContent(data.content);
+      let legacyMode = !('entry_mode' in data) && !('student_number' in data)
+        && !('student_name' in data) && text(data.owner_uid, 1, 128)
+        && text(data.content, 10, 700);
+      let publishedContent = data.published_content == null || (recordMode
+        ? recordLetterContent(data.published_content)
+        : text(data.published_content, 1, 700));
+      return data.keys().hasAll(required) && data.keys().hasOnly(allowed)
+        && data.id == id && uuid(id) && (recordMode || legacyMode)
+        && data.created_at is timestamp && (data.reviewed_at == null || data.reviewed_at is timestamp)
+        && (data.nickname == null || (text(data.nickname, 1, 30) && !data.nickname.matches('(?s).*\\n.*')))
+        && data.consent_to_publish == 1 && data.submission_key == id
+        && data.status in ['pending', 'approved', 'rejected']
+        && publishedContent
+        && (data.publish_order == null || (data.publish_order is int && data.publish_order >= 0 && data.publish_order <= 1000000))
+        && (!('last_history_id' in data) || historyId(data.last_history_id));
     }
     function letterPublicSynced(id, data) {
         return data.status == 'approved'
@@ -282,17 +340,24 @@ service cloud.firestore {
     }
     match /letters/{id} {
       allow read: if admin();
-      allow create: if signedIn() && validLetter(request.resource.data, id)
+      allow create: if validLetter(request.resource.data, id)
         && ((admin() && letterPublicSynced(id, request.resource.data)
             && ((!exists(/databases/$(database)/documents/letterTrash/$(id))
                 && request.resource.data.owner_uid == request.auth.uid && request.resource.data.created_at == request.time
                 && request.resource.data.reviewed_at == request.time
                 && freshLetterLog(request.resource.data.last_history_id, id, 'create', null, request.resource.data))
               || (exists(/databases/$(database)/documents/letterTrash/$(id)) && letterRestore(id, request.resource.data))))
-          || (mayWriteLetter() && !('last_history_id' in request.resource.data)
-            && request.resource.data.owner_uid == request.auth.uid && request.resource.data.created_at == request.time
-            && eventOpen('letter') && request.resource.data.status == 'pending' && request.resource.data.published_content == null
-            && request.resource.data.publish_order == null && request.resource.data.reviewed_at == null && newReceipt(id, 'letter')));
+          || (!signedIn() && validLetter(request.resource.data, id)
+            && request.resource.data.entry_mode == 'record'
+            && !('last_history_id' in request.resource.data)
+            && request.resource.data.owner_uid == null
+            && request.resource.data.created_at == request.time
+            && request.resource.data.status == 'pending'
+            && request.resource.data.published_content == null
+            && request.resource.data.publish_order == null
+            && request.resource.data.reviewed_at == null
+            && eventOpen('letter') && recordReceipt(id, 'letter'))
+          );
       allow update: if admin() && validLetter(request.resource.data, id)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'content', 'status', 'published_content', 'publish_order', 'reviewed_at', 'last_history_id'])
         && request.resource.data.reviewed_at == request.time && letterPublicSynced(id, request.resource.data)
@@ -379,15 +444,23 @@ service cloud.firestore {
         let challenge = get(/databases/$(database)/documents/challenges/$(data.challengeId)).data;
         // Force floating division even when elapsedMs was stored as an integer.
         let calculated = challenge.referenceKeystrokes * 60000.0 / data.elapsedMs;
-        let rawScore = data.speed - data.errors * challenge.get('errorPenalty', 20);
+        let penalty = data.get('entry_mode', '') == 'record' ? 3 : challenge.get('errorPenalty', 3);
+        let rawScore = data.speed - data.errors * penalty;
         return challenge.practice == data.practice
           && data.speed is int && data.speed >= 0 && data.speed - 0.5 <= calculated && calculated < data.speed + 0.5
           && data.errors is int && data.errors >= 0 && data.errors <= 10000
           && data.score is int && data.score == (rawScore > 0 ? rawScore : 0);
       }
       function validScore(data) {
-        // 삭제된 문구의 과거 점수는 그대로 두고 확인·상품 상태만 변경합니다.
-        return exists(/databases/$(database)/documents/challenges/$(data.challengeId))
+        let metadataOnly = request.method == 'update' && admin()
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verificationStatus', 'prizeReceived', 'reviewed_at']);
+        // Old scores remain immutable during moderation even if a challenge's
+        // current penalty differs from the value used when the record arrived.
+        return metadataOnly
+          ? data.speed is int && data.speed >= 0
+            && data.errors is int && data.errors >= 0 && data.errors <= 10000
+            && data.score is int && data.score >= 0
+          : exists(/databases/$(database)/documents/challenges/$(data.challengeId))
           ? calculatedScore(data)
           : request.method == 'update' && admin()
             && data.speed is int && data.speed >= 0
@@ -396,10 +469,16 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verificationStatus', 'prizeReceived', 'reviewed_at']);
       }
       function valid(data) {
-        return data.keys().hasAll(['id', 'owner_uid', 'participantId', 'displayName', 'challengeId', 'elapsedMs', 'speed', 'errors', 'score', 'completedAt', 'prizeReceived', 'practice', 'verificationStatus', 'received_at', 'reviewed_at'])
-          && data.keys().hasOnly(['id', 'owner_uid', 'participantId', 'displayName', 'challengeId', 'elapsedMs', 'speed', 'errors', 'score', 'completedAt', 'prizeReceived', 'practice', 'verificationStatus', 'received_at', 'reviewed_at'])
-          && data.id == id && uuid(id) && text(data.owner_uid, 1, 128)
-          && text(data.participantId, 1, 30) && text(data.displayName, 1, 30)
+        let required = ['id', 'owner_uid', 'participantId', 'displayName', 'challengeId', 'elapsedMs', 'speed', 'errors', 'score', 'completedAt', 'prizeReceived', 'practice', 'verificationStatus', 'received_at', 'reviewed_at'];
+        let allowed = ['id', 'owner_uid', 'participantId', 'displayName', 'challengeId', 'elapsedMs', 'speed', 'errors', 'score', 'completedAt', 'prizeReceived', 'practice', 'verificationStatus', 'received_at', 'reviewed_at', 'entry_mode', 'duplicate_of'];
+        let recordMode = data.get('entry_mode', '') == 'record';
+        let validOwner = recordMode
+          ? data.owner_uid == null && participantNumber(data.participantId)
+            && (!('duplicate_of' in data) || uuid(data.duplicate_of))
+          : !('entry_mode' in data) && text(data.owner_uid, 1, 128);
+        return data.keys().hasAll(required) && data.keys().hasOnly(allowed)
+          && data.id == id && uuid(id) && validOwner
+          && text(data.participantId, 1, 30) && participantName(data.displayName)
           && text(data.challengeId, 1, 100) && data.challengeId.matches('[a-zA-Z0-9_-]+')
           && data.elapsedMs is number && data.elapsedMs > 0 && data.elapsedMs <= 3600000
           && data.completedAt is string && data.completedAt.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z') && data.completedAt.size() <= 30
@@ -407,17 +486,39 @@ service cloud.firestore {
           && data.prizeReceived is bool && data.practice is bool && data.verificationStatus in ['pending', 'verified', 'rejected']
           && (!data.prizeReceived || (!data.practice && data.verificationStatus == 'verified')) && validScore(data);
       }
+      function publicRecordEntry(data, id) {
+        return !signedIn() && data.entry_mode == 'record' && data.owner_uid == null
+          && valid(data) && eventOpen('typing') && enabledChallenge(data.challengeId)
+          && (data.practice || currentChallenge(data))
+          && data.received_at == request.time && data.reviewed_at == null
+          && data.prizeReceived == false && data.verificationStatus == 'pending'
+          && (data.practice || officialClaimReady(id, data))
+          && recordReceipt(id, 'typing');
+      }
+      function adminRecordEntry(data, id) {
+        return admin() && data.entry_mode == 'record' && data.owner_uid == null
+          && valid(data) && data.received_at == request.time && data.reviewed_at == request.time
+          && (data.practice || officialClaimReady(id, data))
+          && (!existsAfter(/databases/$(database)/documents/receipts/$(id))
+            || recordReceipt(id, 'typing'));
+      }
       allow read: if admin();
       // Operators may recover queued booth records after the public event closes.
-      allow create: if signedIn() && valid(request.resource.data)
-        && (request.resource.data.owner_uid == request.auth.uid || recoveryOwner(request.resource.data)) && request.resource.data.received_at == request.time
-        && ((admin() && request.resource.data.reviewed_at == request.time)
-          || ((admin() || (studentTyping(request.resource.data) && eventOpen('typing'))) && request.resource.data.prizeReceived == false
-            && request.resource.data.verificationStatus == 'pending' && request.resource.data.reviewed_at == null
-            && (admin() || get(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId)).data.enabled == true)
-            && newReceipt(id, 'typing')));
+      allow create: if publicRecordEntry(request.resource.data, id)
+        || adminRecordEntry(request.resource.data, id)
+        || (admin() && valid(request.resource.data)
+          && (request.resource.data.owner_uid == request.auth.uid || recoveryOwner(request.resource.data))
+          && request.resource.data.received_at == request.time
+          && ((request.resource.data.reviewed_at == request.time)
+            || (request.resource.data.prizeReceived == false
+              && request.resource.data.verificationStatus == 'pending'
+              && request.resource.data.reviewed_at == null
+              && get(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId)).data.enabled == true
+              && newReceipt(id, 'typing'))));
       allow update: if admin() && valid(request.resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantId', 'displayName', 'challengeId', 'practice', 'elapsedMs', 'speed', 'errors', 'score', 'prizeReceived', 'verificationStatus', 'reviewed_at'])
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantId', 'displayName', 'challengeId', 'practice', 'elapsedMs', 'speed', 'errors', 'score', 'prizeReceived', 'verificationStatus', 'reviewed_at', 'duplicate_of'])
+        && (resource.data.get('entry_mode', '') != 'record' || resource.data.practice
+          || request.resource.data.participantId == resource.data.participantId)
         && request.resource.data.reviewed_at == request.time;
       allow delete: if admin();
     }

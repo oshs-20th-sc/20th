@@ -17,12 +17,19 @@ import {
   setDoc,
   deleteDoc,
 } from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
-import { normalizeText, unicodeLength, UUID_PATTERN, validateSubmission } from '../common.js';
+import {
+  normalizeText,
+  unicodeLength,
+  UUID_PATTERN,
+  validateParticipant,
+  validateSubmission,
+} from '../common.js';
 import { calculateScore, countKeystrokes } from '../typing/scoring.js';
 import { CHALLENGE } from '../typing/challenge.js';
 import { ClientError, withDeadline, adminContext, STUDENT_UID_PATTERN } from './firebase.js';
 export const RATE_LIMIT = 600;
 export const PAGE_SIZE = 100;
+const OFFICIAL_CLAIM_PREFIX = 'official-20261123-';
 export { readEvent, readPublicLetters, readPublicLetter } from './public.js';
 export async function payloadHash(payload) {
   const bytes = await crypto.subtle.digest(
@@ -89,12 +96,112 @@ async function createOnce(db, uid, id, kind, payload, ownerUid = uid) {
     }),
   );
 }
-export async function submitLetter(db, uid, input) {
-  await submissionStudent(db, uid, true);
-  const { value, error } = validateSubmission(input);
+
+function receiptConflict(kind) {
+  return new ClientError(
+    kind === 'typing'
+      ? '기록이 이미 접수되었거나 접수가 마감되었습니다. 접수 상태를 확인해 주세요.'
+      : '행사 접수가 마감되었거나 이미 처리된 요청입니다. 접수 상태를 확인해 주세요.',
+    409,
+    'DUPLICATE_OR_CLOSED',
+  );
+}
+
+async function existingRecordReceipt(db, id, kind, hash) {
+  const saved = await withDeadline(getDoc(doc(db, 'receipts', id)));
+  if (!saved.exists()) return null;
+  const data = saved.data();
+  if (data.entry_mode === 'record' && data.kind === kind && data.payload_hash === hash)
+    return { id, replayed: true };
+  throw new ClientError(
+    '동일 접수번호에 다른 내용이 연결되어 있습니다. 원래 내용으로 다시 시도해 주세요.',
+    409,
+    'KEY_CONFLICT',
+  );
+}
+
+// E-mode submissions have no student Auth UID. Record, receipt, and an optional
+// official-event claim are committed atomically; retries reuse the same UUID.
+async function createRecordOnce(
+  db,
+  id,
+  kind,
+  payload,
+  { claimStudentNumber = null, asAdmin = false } = {},
+) {
+  if (!UUID_PATTERN.test(id)) throw new ClientError('접수 ID가 올바르지 않습니다.', 400);
+  const hash = await payloadHash(payload);
+  const replay = await existingRecordReceipt(db, id, kind, hash);
+  if (replay) return replay;
+
+  const batch = writeBatch(db);
+  let savedPayload = payload;
+  if (claimStudentNumber) {
+    const claimId = `${OFFICIAL_CLAIM_PREFIX}${claimStudentNumber}`;
+    const claimRef = doc(db, 'receipts', claimId);
+    if (asAdmin) {
+      const claim = await withDeadline(getDoc(claimRef));
+      if (claim.exists()) {
+        const previousResult = claim.data().result_id;
+        if (previousResult !== id) savedPayload = { ...payload, duplicate_of: previousResult };
+      } else {
+        batch.set(claimRef, {
+          kind: 'typingEntry',
+          result_id: id,
+          student_number: claimStudentNumber,
+          created_at: serverTimestamp(),
+        });
+      }
+    } else {
+      batch.set(claimRef, {
+        kind: 'typingEntry',
+        result_id: id,
+        student_number: claimStudentNumber,
+        created_at: serverTimestamp(),
+      });
+    }
+  }
+  const timestampField = kind === 'letter' ? 'created_at' : 'received_at';
+  batch.set(doc(db, kind === 'letter' ? 'letters' : 'typingResults', id), {
+    ...savedPayload,
+    owner_uid: null,
+    [timestampField]: serverTimestamp(),
+  });
+  batch.set(doc(db, 'receipts', id), {
+    id,
+    owner_uid: null,
+    entry_mode: 'record',
+    kind,
+    payload_hash: hash,
+    created_at: serverTimestamp(),
+  });
+  try {
+    await withDeadline(batch.commit());
+    return { id, replayed: false };
+  } catch (error) {
+    // A timed-out/ambiguous acknowledgement may still have committed. Only an
+    // exact receipt match is treated as success; otherwise preserve the error.
+    const committed = await existingRecordReceipt(db, id, kind, hash).catch(() => null);
+    if (committed) return committed;
+    if (error?.code === 'permission-denied') throw receiptConflict(kind);
+    throw error;
+  }
+}
+
+export async function submitLetter(db, participant, input) {
+  const identity = validateParticipant(participant);
+  if (!identity.value) throw new ClientError(identity.error, 400, 'INVALID_PARTICIPANT');
+  const { value, error } = validateSubmission({
+    ...input,
+    studentNumber: identity.value.studentNumber,
+    name: identity.value.name,
+  });
   if (!value) throw new ClientError(error, 400, 'VALIDATION_FAILED');
   const payload = {
     id: value.submissionKey,
+    entry_mode: 'record',
+    student_number: value.studentNumber,
+    student_name: value.name,
     nickname: value.nickname || null,
     content: value.content,
     published_content: null,
@@ -104,9 +211,10 @@ export async function submitLetter(db, uid, input) {
     submission_key: value.submissionKey,
     reviewed_at: null,
   };
-  return createOnce(db, uid, value.submissionKey, 'letter', payload);
+  return createRecordOnce(db, value.submissionKey, 'letter', payload);
 }
 export function validateTypingResult(input, challenge = CHALLENGE) {
+  const entryMode = input?.entry_mode === 'record' || input?.entryMode === 'record';
   if (
     !UUID_PATTERN.test(input.id) ||
     !normalizeText(input.participantId) ||
@@ -120,11 +228,13 @@ export function validateTypingResult(input, challenge = CHALLENGE) {
     input.elapsedMs > 3600000
   )
     throw new ClientError('타자 기록의 형식을 확인해 주세요.', 400, 'INVALID_RESULT');
+  if (entryMode && !/^[1-3][0-9]{4}$/.test(input.participantId))
+    throw new ClientError('학번은 현재 학년을 포함한 숫자 5자리로 입력해 주세요.', 400, 'INVALID_RESULT');
   const computed = calculateScore(
     challenge.referenceKeystrokes,
     input.elapsedMs,
     input.errors,
-    challenge.errorPenalty,
+    entryMode ? 3 : challenge.errorPenalty,
   );
   if (input.speed !== computed.speed || input.score !== computed.score)
     throw new ClientError('타수와 최종 점수 계산이 일치하지 않습니다.', 400, 'INVALID_SCORE');
@@ -143,7 +253,65 @@ async function submissionStudent(db, uid, writing = false) {
     throw new ClientError('글 작성이 제한된 계정입니다. 운영진에게 문의하세요.', 403);
   return student;
 }
-export async function submitTyping(db, uid, result, { asAdmin = false } = {}) {
+export async function submitTyping(db, participant, result, { asAdmin = false } = {}) {
+  if (!asAdmin) {
+    const identity = validateParticipant(participant);
+    if (!identity.value) throw new ClientError(identity.error, 400, 'INVALID_PARTICIPANT');
+    const challenge = await readChallenge(db, result.challengeId);
+    const record = {
+      id: result.id,
+      entry_mode: 'record',
+      owner_uid: null,
+      participantId: identity.value.studentNumber,
+      displayName: identity.value.name,
+      challengeId: result.challengeId,
+      elapsedMs: result.elapsedMs,
+      speed: result.speed,
+      errors: result.errors,
+      score: result.score,
+      completedAt: result.completedAt,
+      practice: result.practice,
+      prizeReceived: false,
+      verificationStatus: 'pending',
+      reviewed_at: null,
+    };
+    validateTypingResult(record, challenge);
+    return createRecordOnce(db, record.id, 'typing', record, {
+      claimStudentNumber: record.practice ? null : identity.value.studentNumber,
+    });
+  }
+
+  const uid = participant;
+  if (result.entry_mode === 'record' || result.entryMode === 'record') {
+    const challenge = await readChallenge(db, result.challengeId);
+    const identity = validateParticipant({
+      studentNumber: result.participantId,
+      name: result.displayName,
+    });
+    if (!identity.value) throw new ClientError(identity.error, 400, 'INVALID_RESULT');
+    const record = {
+      id: result.id,
+      entry_mode: 'record',
+      owner_uid: null,
+      participantId: identity.value.studentNumber,
+      displayName: identity.value.name,
+      challengeId: result.challengeId,
+      elapsedMs: result.elapsedMs,
+      speed: result.speed,
+      errors: result.errors,
+      score: result.score,
+      completedAt: result.completedAt,
+      practice: result.practice,
+      prizeReceived: false,
+      verificationStatus: 'pending',
+      reviewed_at: serverTimestamp(),
+    };
+    validateTypingResult(record, challenge);
+    return createRecordOnce(db, record.id, 'typing', record, {
+      claimStudentNumber: record.practice ? null : identity.value.studentNumber,
+      asAdmin: true,
+    });
+  }
   const [student, challenge] = await Promise.all([
     asAdmin ? null : submissionStudent(db, uid),
     readChallenge(db, result.challengeId),
@@ -215,6 +383,9 @@ function decodeLetter(snapshot) {
   const data = snapshot.data();
   return {
     id: snapshot.id,
+    entry_mode: data.entry_mode ?? null,
+    student_number: data.student_number ?? null,
+    student_name: data.student_name ?? null,
     owner_uid: data.owner_uid,
     nickname: data.nickname,
     content: data.content,
@@ -287,7 +458,7 @@ export async function readLettersPage(
     },
     (item) =>
       !term ||
-      `${item.nickname ?? ''} ${item.content} ${item.published_content ?? ''}`
+      `${item.student_number ?? ''} ${item.student_name ?? ''} ${item.nickname ?? ''} ${item.content} ${item.published_content ?? ''}`
         .toLocaleLowerCase()
         .includes(term),
     cursor,
@@ -306,6 +477,8 @@ function decodeTyping(snapshot) {
   const data = snapshot.data();
   return {
     id: snapshot.id,
+    entryMode: data.entry_mode ?? null,
+    duplicateOf: data.duplicate_of ?? null,
     participantId: data.participantId,
     displayName: data.displayName,
     challengeId: data.challengeId,
@@ -417,8 +590,8 @@ function letterEdit(input) {
   const published = input.published_content
     ? normalizeText(input.published_content) || null
     : null;
-  if (published && unicodeLength(published) > 700)
-    throw new ClientError('공개용 본문은 700자 이내입니다.', 400);
+  if (published && new TextEncoder().encode(published).byteLength > 131072)
+    throw new ClientError('공개용 본문이 저장 가능한 크기를 넘었습니다.', 400);
   if (
     !['pending', 'approved', 'rejected'].includes(input.status) ||
     (input.publish_order !== null &&
@@ -731,7 +904,7 @@ export async function readChallenges(db) {
 }
 function decodeChallenge(snapshot) {
   const data = snapshot.data();
-  const errorPenalty = Object.hasOwn(data, 'errorPenalty') ? data.errorPenalty : 20;
+  const errorPenalty = Object.hasOwn(data, 'errorPenalty') ? data.errorPenalty : 3;
   if (!Number.isInteger(errorPenalty) || errorPenalty < 0 || errorPenalty > 100)
     throw new ClientError('문구의 오타 감점은 0~100 사이의 정수여야 합니다.', 400);
   return {
@@ -787,20 +960,37 @@ export async function deleteChallenge(db, id) {
 }
 export async function saveTyping(db, uid, id, input, creationKey = crypto.randomUUID()) {
   const challenge = await readChallenge(db, input.challengeId);
+  const recordMode = input.entry_mode === 'record' || input.entryMode === 'record';
   const computed = calculateScore(
     challenge.referenceKeystrokes,
     input.elapsedMs,
     input.errors,
-    challenge.errorPenalty,
+    recordMode ? 3 : challenge.errorPenalty,
   );
-  const data = {
-    ...input,
-    ...computed,
-    participantId: normalizeText(input.participantId),
-    displayName: normalizeText(input.displayName),
-    practice: challenge.practice,
-    verificationStatus: input.verificationStatus ?? 'pending',
-  };
+  const data = recordMode
+    ? {
+        entry_mode: 'record',
+        owner_uid: null,
+        participantId: normalizeText(input.participantId),
+        displayName: normalizeText(input.displayName),
+        challengeId: challenge.challengeId,
+        elapsedMs: input.elapsedMs,
+        speed: computed.speed,
+        errors: input.errors,
+        score: computed.score,
+        completedAt: input.completedAt,
+        practice: challenge.practice,
+        prizeReceived: input.prizeReceived === true,
+        verificationStatus: input.verificationStatus ?? 'pending',
+      }
+    : {
+        ...input,
+        ...computed,
+        participantId: normalizeText(input.participantId),
+        displayName: normalizeText(input.displayName),
+        practice: challenge.practice,
+        verificationStatus: input.verificationStatus ?? 'pending',
+      };
   if (
     !data.participantId ||
     !data.displayName ||
@@ -811,6 +1001,11 @@ export async function saveTyping(db, uid, id, input, creationKey = crypto.random
     (input.prizeReceived && (challenge.practice || data.verificationStatus !== 'verified'))
   )
     throw new ClientError('참가 정보·시간·오타와 상품 수령 조건을 확인해 주세요.', 400);
+  if (recordMode && !validateParticipant({
+    studentNumber: data.participantId,
+    name: data.displayName,
+  }).value)
+    throw new ClientError('학번과 이름을 확인해 주세요.', 400, 'INVALID_PARTICIPANT');
   const key = id ?? creationKey;
   if (!UUID_PATTERN.test(key)) throw new ClientError('기록 ID가 올바르지 않습니다.', 400);
   const ref = doc(db, 'typingResults', key);
@@ -819,19 +1014,52 @@ export async function saveTyping(db, uid, id, input, creationKey = crypto.random
       const previous = await tx.get(ref);
       if (id && !previous.exists())
         throw new ClientError('이미 삭제된 기록입니다. 목록을 새로고침해 주세요.', 404);
-      tx.set(
-        ref,
-        previous.exists()
-          ? { ...previous.data(), ...data, reviewed_at: serverTimestamp() }
-          : {
-              ...data,
-              id: key,
-              owner_uid: uid,
-              completedAt: new Date().toISOString(),
-              received_at: serverTimestamp(),
-              reviewed_at: serverTimestamp(),
-            },
-      );
+      const old = previous.exists() ? previous.data() : null;
+      const savedRecordMode = recordMode || old?.entry_mode === 'record';
+      if (
+        savedRecordMode &&
+        old?.entry_mode === 'record' &&
+        !old.practice &&
+        data.participantId !== old.participantId
+      )
+        throw new ClientError(
+          '공식 기록의 학번은 참여 제한 정보와 연결되어 있어 수정할 수 없습니다.',
+          409,
+          'OFFICIAL_ID_LOCKED',
+        );
+
+      let after = old
+        ? {
+            ...old,
+            ...data,
+            ...(savedRecordMode ? { entry_mode: 'record', owner_uid: null } : {}),
+            ...(savedRecordMode && !data.completedAt ? { completedAt: old.completedAt } : {}),
+            reviewed_at: serverTimestamp(),
+          }
+        : {
+            ...data,
+            id: key,
+            ...(savedRecordMode ? { entry_mode: 'record', owner_uid: null } : { owner_uid: uid }),
+            completedAt: data.completedAt || new Date().toISOString(),
+            received_at: serverTimestamp(),
+            reviewed_at: serverTimestamp(),
+          };
+
+      if (savedRecordMode && !after.practice) {
+        const claimRef = doc(db, 'receipts', `${OFFICIAL_CLAIM_PREFIX}${after.participantId}`);
+        const claim = await tx.get(claimRef);
+        if (!claim.exists()) {
+          tx.set(claimRef, {
+            kind: 'typingEntry',
+            result_id: key,
+            student_number: after.participantId,
+            created_at: serverTimestamp(),
+          });
+        } else if (claim.data().result_id !== key) {
+          after = { ...after, duplicate_of: claim.data().result_id };
+        }
+      }
+      tx.set(ref, after);
     }),
   );
   return key;
@@ -919,6 +1147,8 @@ export async function exportFirebase(scope, format) {
       [
         'ID',
         '작성 계정 UID',
+        '학번',
+        '작성자 이름',
         '별명',
         '원문',
         '공개용 본문',
@@ -932,6 +1162,8 @@ export async function exportFirebase(scope, format) {
       ...letters.map((letter) => [
         letter.id,
         letter.owner_uid,
+        letter.student_number,
+        letter.student_name,
         letter.nickname,
         letter.content,
         letter.published_content,
