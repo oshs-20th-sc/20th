@@ -1,8 +1,8 @@
 import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js';
-import { submitTyping, readChallenge, validateTypingResult } from '../db/database.js';
+import { submitTyping, readChallenge, validateTypingResult } from '../db/database.js?v=record-entry-1';
 
-import { toCsv, validateParticipant } from '../common.js';
-import { rankResults, rankedAttempts } from './scoring.js';
+import { toCsv, validateParticipant } from '../common.js?v=record-entry-1';
+import { rankResults, rankedAttempts } from './scoring.js?v=record-entry-1';
 
 // Legacy storage identifier is intentionally stable so existing local records survive rebranding.
 const DB_NAME = 'osung-typing';

@@ -1,7 +1,7 @@
 import { errorMessage, getPublicDb } from '../db/firebase.js';
 import { readEvent } from '../db/public.js';
-import { submitLetter } from '../db/database.js';
-import { normalizeText, unicodeLength, validateSubmission } from '../common.js';
+import { submitLetter } from '../db/database.js?v=record-entry-1';
+import { normalizeText, unicodeLength, validateSubmission } from '../common.js?v=record-entry-1';
 
 const form = document.querySelector('#write-form');
 const studentNumber = document.querySelector('#student-number');

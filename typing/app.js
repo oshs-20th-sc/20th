@@ -1,7 +1,7 @@
 import { getPublicDb, errorMessage } from '../db/firebase.js';
-import { readEvent, readChallenge } from '../db/database.js';
-import { mountLogin } from '../login.js';
-import { downloadFile } from '../common.js';
+import { readEvent, readChallenge } from '../db/database.js?v=record-entry-1';
+import { mountLogin } from '../login.js?v=record-entry-1';
+import { downloadFile } from '../common.js?v=record-entry-1';
 import {
   initialInputState,
   commitInput,
@@ -9,8 +9,8 @@ import {
   compositionEnd,
   isComplete,
 } from './engine.js';
-import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js';
-import { saveResult } from './storage.js';
+import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=record-entry-1';
+import { saveResult } from './storage.js?v=record-entry-1';
 
 const elements = Object.fromEntries(
   [

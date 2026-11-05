@@ -1,5 +1,5 @@
 import { getPublicDb, getDoc, doc, sessionPolicy } from './db/firebase.js';
-import { escapeHtml as html, localHref, validateParticipant } from './common.js';
+import { escapeHtml as html, localHref, validateParticipant } from './common.js?v=record-entry-1';
 
 // 참가 정보만 메모리에 보관합니다. 학생 Auth 계정이나 로그인 토큰을 만들지 않습니다.
 export function mountLogin({
@@ -17,7 +17,7 @@ export function mountLogin({
   container.innerHTML = `<section id="login-panel" class="panel login-panel">
     <h2>로그인</h2><form id="entry-form" autocomplete="off">
       <label>학번<input name="studentNumber" required inputmode="numeric" pattern="[1-3][0-9]{4}" minlength="5" maxlength="5" autocomplete="off" /></label>
-      <label>이름<input name="name" required maxlength="30" autocomplete="off" /></label>
+      <label>이름<input name="name" type="text" required maxlength="30" autocomplete="off" /></label>
       <p id="login-error" class="error" role="alert" hidden></p>
       <button type="submit">로그인</button>
     </form>

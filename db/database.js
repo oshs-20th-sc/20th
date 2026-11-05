@@ -1,4 +1,4 @@
-import { toCsv, validatePublicData } from '../common.js';
+import { toCsv, validatePublicData } from '../common.js?v=record-entry-1';
 import {
   collection,
   doc,
@@ -23,8 +23,8 @@ import {
   UUID_PATTERN,
   validateParticipant,
   validateSubmission,
-} from '../common.js';
-import { calculateScore, countKeystrokes } from '../typing/scoring.js';
+} from '../common.js?v=record-entry-1';
+import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=record-entry-1';
 import { CHALLENGE } from '../typing/challenge.js';
 import { ClientError, withDeadline, adminContext, STUDENT_UID_PATTERN } from './firebase.js';
 export const RATE_LIMIT = 600;

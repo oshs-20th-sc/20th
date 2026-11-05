@@ -5,14 +5,13 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>글 작성</title>
     <link rel="stylesheet" href="../style.css" />
-    <script type="module" src="./app.js"></script>
+    <script type="module" src="./app.js?v=record-entry-1"></script>
   </head>
   <body>
     <main class="container">
       <header class="section-top">
         <h1>글 작성</h1>
       </header>
-      <p class="muted">2026년 11월 23일(월) · 점심시간 현장 참여</p>
       <p id="event-status" role="status">접수 상태 확인 중</p>
       <button id="retry-event" type="button" hidden>다시 확인</button>
       <p id="error" class="error" role="alert" hidden></p>
@@ -27,7 +26,6 @@
             autocomplete="off"
             maxlength="5"
             required
-            aria-describedby="identity-help"
           />
           <label for="student-name">이름</label>
           <input
@@ -36,9 +34,7 @@
             autocomplete="off"
             maxlength="30"
             required
-            aria-describedby="identity-help"
           />
-          <p id="identity-help" class="muted">학번과 이름은 운영진 확인용으로 저장되며 공개되지 않습니다.</p>
 
           <label for="nickname">별명</label>
           <input
@@ -59,7 +55,7 @@
           ></textarea>
           <p id="content-count" class="muted">0자</p>
           <p id="privacy" class="muted">
-            본문에 개인정보를 적지 마세요. 승인된 본문과 별명은 공개됩니다.
+            개인정보를 입력하지 마세요. 승인된 글과 별명은 공개됩니다.
           </p>
 
           <label class="checkbox">
