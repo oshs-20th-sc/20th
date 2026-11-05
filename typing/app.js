@@ -1,6 +1,6 @@
 import { getPublicDb, errorMessage } from '../db/firebase.js';
 import { readEvent, readChallenge } from '../db/database.js?v=record-entry-1';
-import { mountLogin } from '../login.js?v=record-entry-1';
+import { mountLogin } from '../login.js?v=record-entry-2';
 import { downloadFile } from '../common.js?v=record-entry-1';
 import {
   initialInputState,
