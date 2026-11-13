@@ -10,7 +10,7 @@ import {
   startAfter,
 } from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
 import { UUID_PATTERN } from '../common.js';
-import { CHALLENGE } from '../typing/challenge.js';
+import { CHALLENGE } from '../typing/challenge.js?v=typing-fix-20261113';
 import { ClientError, withDeadline } from './firebase.js?v=ops-20261113';
 
 function publicLetter(snapshot) {
@@ -57,7 +57,7 @@ export async function readEvent(db) {
     );
   return {
     phase,
-    typingEnabled: phase === 'A' && data.typingEnabled !== false,
+    typingEnabled: true, // Legacy setting is ignored for the single typing competition.
     submissionsEnabled: phase === 'A' && data.submissionsEnabled !== false,
     welcomeEnabled: data.welcomeEnabled ?? phase === 'C',
     activeChallengeId: data.activeChallengeId || CHALLENGE.challengeId,

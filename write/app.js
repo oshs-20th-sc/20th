@@ -1,6 +1,6 @@
 import { errorMessage, getPublicDb } from '../db/firebase.js?v=ops-20261113';
-import { readEvent } from '../db/public.js?v=ops-20261113';
-import { submitLetter } from '../db/database.js?v=ops-20261113';
+import { readEvent } from '../db/public.js?v=typing-fix-20261113';
+import { submitLetter } from '../db/database.js?v=typing-fix-20261113';
 import { normalizeText, unicodeLength, validateSubmission } from '../common.js?v=record-entry-1';
 
 const form = document.querySelector('#write-form');

@@ -22,17 +22,14 @@ service cloud.firestore {
       return value is string && (value.matches('[A-Za-z0-9_-]{20}') || value.matches('[0-9]{7}'));
     }
     function uuid(value) { return value is string && value.matches('[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'); }
-    function eventOpen(kind) {
+    function writingOpen() {
       let data = get(/databases/$(database)/documents/settings/event).data;
-      return data.phase == 'A' && (kind == 'letter' ? data.get('submissionsEnabled', true) : data.get('typingEnabled', true));
+      return data.phase == 'A' && data.get('submissionsEnabled', true);
     }
     function currentChallenge(data) {
       let event = get(/databases/$(database)/documents/settings/event).data;
-      return data.challengeId == event.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0');
-    }
-    function enabledChallenge(id) {
-      let path = /databases/$(database)/documents/challenges/$(id);
-      return exists(path) && get(path).data.enabled == true && get(path).data.get('deleted', false) == false;
+      return data.challengeId == event.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0')
+        && get(/databases/$(database)/documents/challenges/$(data.challengeId)).data.get('deleted', false) == false;
     }
     function participantNumber(value) {
       return value is string && value.matches('[1-3][0-9]{4}');
@@ -263,7 +260,7 @@ service cloud.firestore {
             && request.resource.data.published_content == null
             && request.resource.data.publish_order == null
             && request.resource.data.reviewed_at == null
-            && eventOpen('letter') && recordReceipt(id, 'letter'))
+            && writingOpen() && recordReceipt(id, 'letter'))
           );
       allow update: if admin() && validLetter(request.resource.data, id)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'content', 'status', 'published_content', 'publish_order', 'reviewed_at', 'last_history_id'])
@@ -353,7 +350,9 @@ service cloud.firestore {
         let calculated = challenge.referenceKeystrokes * 60000.0 / data.elapsedMs;
         let penalty = data.get('entry_mode', '') == 'record' ? 3 : challenge.get('errorPenalty', 3);
         let rawScore = data.speed - data.errors * penalty;
-        return challenge.practice == data.practice
+        return (data.get('entry_mode', '') == 'record'
+          ? (!data.practice || (admin() && challenge.practice == data.practice))
+          : challenge.practice == data.practice)
           && data.speed is int && data.speed >= 0 && data.speed - 0.5 <= calculated && calculated < data.speed + 0.5
           && data.errors is int && data.errors >= 0 && data.errors <= 10000
           && data.score is int && data.score == (rawScore > 0 ? rawScore : 0);
@@ -395,12 +394,10 @@ service cloud.firestore {
       }
       function publicRecordEntry(data, id) {
         return !signedIn() && data.entry_mode == 'record' && data.owner_uid == null
-          && valid(data) && eventOpen('typing') && enabledChallenge(data.challengeId)
-          && (data.practice || currentChallenge(data))
+          && valid(data) && data.practice == false && currentChallenge(data)
           && data.received_at == request.time && data.reviewed_at == null
           && data.prizeReceived == false && data.verificationStatus == 'pending'
-          && (data.practice || officialClaimReady(id, data))
-          && recordReceipt(id, 'typing');
+          && officialClaimReady(id, data) && recordReceipt(id, 'typing');
       }
       function adminRecordEntry(data, id) {
         return admin() && data.entry_mode == 'record' && data.owner_uid == null

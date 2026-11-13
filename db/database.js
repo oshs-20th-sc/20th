@@ -25,11 +25,11 @@ import {
   validateSubmission,
 } from '../common.js?v=record-entry-1';
 import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=record-entry-1';
-import { CHALLENGE } from '../typing/challenge.js';
+import { CHALLENGE } from '../typing/challenge.js?v=typing-fix-20261113';
 import { ClientError, withDeadline, adminContext } from './firebase.js?v=ops-20261113';
 export const PAGE_SIZE = 100;
 const OFFICIAL_CLAIM_PREFIX = 'official-20261123-';
-export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=ops-20261113';
+export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=typing-fix-20261113';
 export async function payloadHash(payload) {
   const bytes = await crypto.subtle.digest(
     'SHA-256',
@@ -42,10 +42,10 @@ export async function payloadHash(payload) {
 function receiptConflict(kind) {
   return new ClientError(
     kind === 'typing'
-      ? '기록이 이미 접수되었거나 접수가 마감되었습니다. 접수 상태를 확인해 주세요.'
+      ? '기록을 저장하지 못했습니다. 같은 학번의 기존 기록이나 문구 변경 여부를 운영진에게 확인해 주세요.'
       : '행사 접수가 마감되었거나 이미 처리된 요청입니다. 접수 상태를 확인해 주세요.',
     409,
-    'DUPLICATE_OR_CLOSED',
+    kind === 'typing' ? 'TYPING_REJECTED' : 'DUPLICATE_OR_CLOSED',
   );
 }
 
@@ -168,7 +168,8 @@ export function validateTypingResult(input, challenge = CHALLENGE) {
     unicodeLength(input.participantId) > 30 ||
     unicodeLength(input.displayName) > 30 ||
     input.challengeId !== challenge.challengeId ||
-    input.practice !== challenge.practice ||
+    typeof input.practice !== 'boolean' ||
+    (!entryMode && input.practice !== challenge.practice) ||
     input.prizeReceived ||
     !Number.isFinite(Date.parse(input.completedAt)) ||
     input.elapsedMs > 3600000
@@ -202,14 +203,14 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
       errors: result.errors,
       score: result.score,
       completedAt: result.completedAt,
-      practice: result.practice,
+      practice: false,
       prizeReceived: false,
       verificationStatus: 'pending',
       reviewed_at: null,
     };
     validateTypingResult(record, challenge);
     return createRecordOnce(db, record.id, 'typing', record, {
-      claimStudentNumber: record.practice ? null : identity.value.studentNumber,
+      claimStudentNumber: identity.value.studentNumber,
     });
   }
 
@@ -838,7 +839,7 @@ export async function setEvent(db, phase, options) {
           text: CHALLENGE.text,
           referenceKeystrokes: CHALLENGE.referenceKeystrokes,
           errorPenalty: CHALLENGE.errorPenalty,
-          practice: true,
+          practice: false,
           enabled: true,
         });
       } else if (challenge.data().enabled !== true || challenge.data().deleted === true) {
@@ -851,6 +852,24 @@ export async function setEvent(db, phase, options) {
       });
     }),
   );
+}
+// Selecting a typing passage does not open/close writing or public letters.
+export async function selectChallenge(db, id) {
+  if (typeof id !== 'string' || !/^[a-zA-Z0-9_-]{1,100}$/.test(id))
+    throw new ClientError('문구 ID가 올바르지 않습니다.', 400);
+  await withDeadline(runTransaction(db, async (tx) => {
+    const eventRef = doc(db, 'settings', 'event');
+    const challengeRef = doc(db, 'challenges', id);
+    const [event, challenge] = await Promise.all([tx.get(eventRef), tx.get(challengeRef)]);
+    if (!challenge.exists() || challenge.data().deleted === true)
+      throw new ClientError('사용할 문구를 찾을 수 없습니다.', 404);
+    if (!challenge.data().enabled) tx.update(challengeRef, { enabled: true });
+    tx.set(eventRef, {
+      ...(event.exists() ? event.data() : { phase: 'A' }),
+      activeChallengeId: id,
+      updated_at: serverTimestamp(),
+    });
+  }));
 }
 export async function readChallenge(db, id) {
   if (!/^[a-zA-Z0-9_-]{1,100}$/.test(id))

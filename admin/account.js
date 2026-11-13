@@ -13,8 +13,8 @@ import {
   withDeadline,
 } from '../db/firebase.js?v=ops-20261113';
 import { escapeHtml as html } from '../common.js';
-import { $, field, run, setStatus, submit } from './shared.js?v=ops-20261113';
-import { state } from './state.js?v=ops-20261113';
+import { $, field, run, setStatus, submit } from './shared.js?v=typing-fix-20261113';
+import { state } from './state.js?v=typing-fix-20261113';
 
 export async function accountView(db, sequence = state.viewSequence) {
   const roles = await withDeadline(getDocs(collection(db, 'admins')));

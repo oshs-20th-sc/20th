@@ -6,9 +6,9 @@ import {
   errorMessage,
   resetAdminPassword,
 } from './db/firebase.js?v=ops-20261113';
-import { readLettersPage, readTypingPage, readChallenges, readEvent, readSessionPolicy } from './db/database.js?v=ops-20261113';
+import { readLettersPage, readTypingPage, readChallenges, readEvent, readSessionPolicy } from './db/database.js?v=typing-fix-20261113';
 import { escapeHtml as html, localHref } from './common.js';
-import { state, feature } from './admin/state.js?v=ops-20261113';
+import { state, feature } from './admin/state.js?v=typing-fix-20261113';
 import {
   root,
   featureTitle,
@@ -28,11 +28,11 @@ import {
   resetLetterPages,
   resetResultPages,
   bindRenderTab,
-} from './admin/shared.js?v=ops-20261113';
-import { lettersView } from './admin/letters.js?v=ops-20261113';
-import { recordsView } from './admin/typing.js?v=ops-20261113';
-import { settingsView } from './admin/settings.js?v=ops-20261113';
-import { accountView } from './admin/account.js?v=ops-20261113';
+} from './admin/shared.js?v=typing-fix-20261113';
+import { lettersView } from './admin/letters.js?v=typing-fix-20261113';
+import { recordsView } from './admin/typing.js?v=typing-fix-20261113';
+import { settingsView } from './admin/settings.js?v=typing-fix-20261113';
+import { accountView } from './admin/account.js?v=typing-fix-20261113';
 
 function applySession(next) {
   const entering = !state.session.authenticated || next.uid !== state.session.uid;

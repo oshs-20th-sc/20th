@@ -1,16 +1,16 @@
 /** Event, session, and typing challenge settings. */
 import { adminContext } from '../db/firebase.js?v=ops-20261113';
 import {
-  changeChallenge,
   deleteChallenge,
   readChallenges,
   readEvent,
   saveChallenge,
+  selectChallenge,
   setEvent,
-} from '../db/database.js?v=ops-20261113';
+} from '../db/database.js?v=typing-fix-20261113';
 import { countKeystrokes } from '../typing/scoring.js';
 import { escapeHtml as html } from '../common.js';
-import { readSessionPolicy, saveSessionPolicy } from '../db/database.js?v=ops-20261113';
+import { readSessionPolicy, saveSessionPolicy } from '../db/database.js?v=typing-fix-20261113';
 import {
   $,
   area,
@@ -24,47 +24,60 @@ import {
   select,
   setStatus,
   submit,
-} from './shared.js?v=ops-20261113';
-import { state, feature } from './state.js?v=ops-20261113';
+} from './shared.js?v=typing-fix-20261113';
+import { state, feature } from './state.js?v=typing-fix-20261113';
 
 export function settingsView() {
-  $('#view').innerHTML = `<form class="panel" id="event-settings"><h2>운영 설정</h2>
-    ${select('phase', '단계', state.config?.phase ?? 'B', [
-      ['A', 'A · 접수'],
-      ['B', 'B · 마감'],
-      ['C', 'C · 공개'],
-    ])}
-    ${checkbox('typingEnabled', '타자 접수', state.config?.typingEnabled)}${checkbox('submissionsEnabled', '글 접수', state.config?.submissionsEnabled)}${checkbox('welcomeEnabled', '승인 글 공개', state.config?.welcomeEnabled)}
-    ${select(
-      'activeChallengeId',
-      '사용 문구',
-      state.config?.activeChallengeId ?? '',
-      state.challenges
-        .filter((item) => item.enabled && !item.deleted)
-        .map((item) => [
-          item.challengeId,
-          `${item.title} · ${item.practice ? '연습' : '공식 · 행사 오타당 3점'}`,
-        ]),
-    )}
-    <p class="muted">행사일 2026. 11. 23.(월) · 점심시간 현장 참여</p>
-    <p class="muted">정확한 점심시간은 운영진 현장 안내에 따릅니다. 접수는 A 단계에서만 가능합니다.</p><button>저장</button></form>
+  const eventSettings = feature === 'typing'
+    ? `<form class="panel" id="typing-challenge-settings"><h2>사용 문구</h2>
+      ${select(
+        'activeChallengeId',
+        '현재 문구',
+        state.config?.activeChallengeId ?? '',
+        state.challenges
+          .filter((item) => !item.deleted)
+          .map((item) => [item.challengeId, item.title]),
+      )}
+      <button${state.challenges.some((item) => !item.deleted) ? '' : ' disabled'}>적용</button></form>`
+    : `<form class="panel" id="event-settings"><h2>운영 설정</h2>
+      ${select('phase', '단계', state.config?.phase ?? 'B', [
+        ['A', 'A · 접수'],
+        ['B', 'B · 마감'],
+        ['C', 'C · 공개'],
+      ])}
+      ${checkbox('submissionsEnabled', '글 접수', state.config?.submissionsEnabled)}${checkbox('welcomeEnabled', '승인 글 공개', state.config?.welcomeEnabled)}
+      <p class="muted">행사일 2026. 11. 23.(월) · 점심시간 현장 참여</p>
+      <p class="muted">정확한 점심시간은 운영진 현장 안내에 따릅니다.</p><button>저장</button></form>`;
+  $('#view').innerHTML = `${eventSettings}
     <form class="panel" id="session-policy"><h2>공용 기기 설정</h2>
     ${checkbox('boothMode', '공용 기기 모드', state.sessionPolicy.boothMode)}
     ${field('idleMinutes', '미사용 로그아웃 (분)', state.sessionPolicy.idleMinutes, 'number', 'required min="1" max="120" step="1"')}
     <button>저장</button></form>
     ${feature === 'typing' ? '<section class="panel"><h2>문구</h2><button id="new-challenge">추가</button><div id="challenges"></div></section><div id="editor"></div>' : ''}`;
-  submit($('#event-settings'), async (values) => {
-    await setEvent((await adminContext()).db, values.phase, {
-      typingEnabled: !!values.typingEnabled,
-      submissionsEnabled: !!values.submissionsEnabled,
-      welcomeEnabled: !!values.welcomeEnabled,
-      activeChallengeId: values.activeChallengeId,
+  if (feature === 'typing') {
+    submit($('#typing-challenge-settings'), async (values) => {
+      const { db } = await adminContext();
+      await selectChallenge(db, values.activeChallengeId);
+      state.config = await readEvent(db);
+      state.challenges = await readChallenges(db);
+      invalidateListCache('records');
+      settingsView();
+      setStatus('사용 문구 변경 완료');
     });
-    state.config = await readEvent((await adminContext()).db);
-    invalidateListCache('records');
-    if (feature === 'typing') renderChallenges();
-    setStatus('저장 완료');
-  });
+  } else {
+    submit($('#event-settings'), async (values) => {
+      const { db } = await adminContext();
+      const options = {
+        submissionsEnabled: !!values.submissionsEnabled,
+        welcomeEnabled: !!values.welcomeEnabled,
+      };
+      if (state.config?.activeChallengeId)
+        options.activeChallengeId = state.config.activeChallengeId;
+      await setEvent(db, values.phase, options);
+      state.config = await readEvent(db);
+      setStatus('저장 완료');
+    });
+  }
   submit($('#session-policy'), async (values) => {
     const { db } = await adminContext();
     await saveSessionPolicy(db, { ...values, boothMode: !!values.boothMode });
@@ -82,9 +95,9 @@ export function renderChallenges() {
     .map(
       (
         item,
-      ) => `<article class="record"><strong>${html(item.title)}</strong> · ${item.practice ? '연습' : '공식'} · ${item.referenceKeystrokes}타 · 행사 오타 감점 3점
+      ) => `<article class="record"><strong>${html(item.title)}</strong> · ${item.referenceKeystrokes}타 · 오타당 3점 감점
     <p class="letter-content">${html(item.text)}</p><small>${html(item.challengeId)}</small><div class="actions">
-    <button data-edit="${item.challengeId}">수정</button><button data-toggle="${item.challengeId}"${item.challengeId === state.config?.activeChallengeId ? ' disabled' : ''}>${item.enabled ? '접수 끄기' : '접수 켜기'}</button><button class="danger" data-delete="${item.challengeId}"${item.challengeId === state.config?.activeChallengeId ? ' disabled' : ''}>영구 삭제</button></div></article>`,
+    <button data-edit="${item.challengeId}">수정</button><button class="danger" data-delete="${item.challengeId}"${item.challengeId === state.config?.activeChallengeId ? ' disabled' : ''}>영구 삭제</button></div></article>`,
     )
     .join('');
   $('#challenges').onclick = (event) => {
@@ -100,7 +113,7 @@ export function renderChallenges() {
     if (
       button.dataset.delete &&
       !confirm(
-        '문구를 영구 삭제할까요? 기존 타자 기록은 보존되지만 이 문구로 새 기록을 접수할 수 없습니다.',
+        '문구를 영구 삭제할까요? 기존 타자 기록은 보존되지만 이 문구로 새 기록을 저장할 수 없습니다.',
       )
     )
       return;
@@ -113,22 +126,22 @@ export function renderChallenges() {
           state.resultFilter.view = 'attempts';
           resetResultPages();
         }
-      } else await changeChallenge(db, id, { enabled: !item.enabled });
+      }
       invalidateListCache('records');
       state.challenges = await readChallenges(db);
       settingsView();
-      setStatus(button.dataset.delete ? '문구 영구 삭제 완료 · 기존 기록 보존' : '저장 완료');
+      setStatus('문구 영구 삭제 완료 · 기존 기록 보존');
     });
   };
 }
 
 export function challengeEditor(challenge) {
-  if (!confirmDiscard($('#editor'))) return;
+  if (!confirmDiscard($('#editor')) || !confirmDiscard($('#typing-challenge-settings'))) return;
   const creationKey = challenge ? undefined : crypto.randomUUID();
   $('#editor').innerHTML =
     `<form id="challenge-editor" class="panel"><h2>문구 ${challenge ? '수정' : '추가'}</h2>
-    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}${checkbox('practice', '연습', challenge?.practice ?? true)}
-    <p class="muted">공식 대회는 오타당 3점 감점합니다.</p>
+    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}
+    <p class="muted">오타당 3점 감점합니다.</p>
     <p id="keys"></p><div class="actions"><button>${challenge ? '수정 저장' : '추가'}</button><button type="button" id="close-editor">취소</button></div></form>`;
   $('#editor').scrollIntoView({ block: 'start' });
   $('#close-editor').onclick = closeEditor;
@@ -137,17 +150,13 @@ export function challengeEditor(challenge) {
       `${countKeystrokes(event.currentTarget.elements.text.value.trim().replace(/\s+/g, ' '))}타`;
   };
   submit($('#challenge-editor'), async (values) => {
-    if (!confirmDiscard($('#event-settings'))) {
-      setStatus();
-      return false;
-    }
     const { db } = await adminContext();
     await saveChallenge(
       db,
       {
         title: values.title,
         text: values.text,
-        practice: !!values.practice,
+        practice: false,
       },
       challenge,
       creationKey,

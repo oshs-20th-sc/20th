@@ -10,7 +10,7 @@ import {
   reviewLetters,
   saveLetter,
   synchronizePublicLetters,
-} from '../db/database.js?v=ops-20261113';
+} from '../db/database.js?v=typing-fix-20261113';
 import { downloadFile, escapeHtml as html, koreanDate } from '../common.js';
 import {
   $,
@@ -29,9 +29,9 @@ import {
   select,
   setStatus,
   submit,
-} from './shared.js?v=ops-20261113';
-import { renderTab } from './shared.js?v=ops-20261113';
-import { state } from './state.js?v=ops-20261113';
+} from './shared.js?v=typing-fix-20261113';
+import { renderTab } from './shared.js?v=typing-fix-20261113';
+import { state } from './state.js?v=typing-fix-20261113';
 
 export function lettersView() {
   const trash = state.letterFilter.status === 'trash';

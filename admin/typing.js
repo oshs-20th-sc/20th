@@ -4,7 +4,7 @@ import {
   deleteTyping,
   readTyping,
   reviewTyping,
-} from '../db/database.js?v=ops-20261113';
+} from '../db/database.js?v=typing-fix-20261113';
 import { downloadFile, escapeHtml as html } from '../common.js';
 import {
   importResultFile,
@@ -12,7 +12,7 @@ import {
   pendingResults,
   resultsCsv,
   synchronizePending,
-} from '../typing/storage.js?v=ops-20261113';
+} from '../typing/storage.js?v=typing-fix-20261113';
 import {
   $,
   confirmDiscard,
@@ -26,9 +26,9 @@ import {
   setStatus,
   submit,
   verification,
-} from './shared.js?v=ops-20261113';
-import { renderTab } from './shared.js?v=ops-20261113';
-import { state } from './state.js?v=ops-20261113';
+} from './shared.js?v=typing-fix-20261113';
+import { renderTab } from './shared.js?v=typing-fix-20261113';
+import { state } from './state.js?v=typing-fix-20261113';
 
 const CURRENT_STUDENT_NUMBER = /^[1-3][0-9]{4}$/;
 
@@ -46,7 +46,7 @@ export async function recordsView() {
         ['', '전체 문구 · 전체 시도'],
         ...state.challenges.map((item) => [
           item.challengeId,
-          `${item.title} (${item.practice ? '연습' : '공식'})`,
+          item.title,
         ]),
       ])}
       ${select('verification', '확인 상태', state.resultFilter.verification, [['all', '전체'], ...Object.entries(verification)])}
@@ -55,7 +55,7 @@ export async function recordsView() {
         ['attempts', '전체 시도'],
       ])}<button>검색</button></form>
     <div class="table-scroll" id="result-list"></div><div class="actions" id="pagination"></div>
-    <details class="panel"><summary>기기 백업</summary><p id="pending-count"></p><div class="actions"><button id="sync-pending">미전송 기록 접수</button><button id="local-json">기기 JSON</button><button id="import-results">기록 파일 불러오기</button><input id="result-file" type="file" accept=".json,application/json" hidden /></div></details>`;
+    <details class="panel"><summary>기기 백업</summary><p id="pending-count"></p><div class="actions"><button id="sync-pending">미전송 기록 전송</button><button id="local-json">기기 JSON</button><button id="import-results">기록 파일 불러오기</button><input id="result-file" type="file" accept=".json,application/json" hidden /></div></details>`;
   $('#reload').onclick = () => renderTab(true);
   $('#result-filter').onsubmit = (event) => {
     event.preventDefault();
@@ -94,7 +94,7 @@ export async function recordsView() {
       const result = await synchronizePending();
       await reloadResults();
       setStatus(
-        `${result.synced}건 접수 · ${result.remaining}건 미전송${result.error ? ` · ${result.error}` : ''}`,
+        `${result.synced}건 저장 · ${result.remaining}건 미전송${result.error ? ` · ${result.error}` : ''}`,
       );
     });
   $('#local-json').onclick = () =>
@@ -129,7 +129,7 @@ export async function recordsView() {
       }
       const count = await importResultFile(input);
       await pendingCount();
-      setStatus(`${count}건을 불러왔습니다. 미전송 기록 접수로 서버에 저장하세요.`);
+      setStatus(`${count}건을 불러왔습니다. 미전송 기록 전송으로 서버에 저장하세요.`);
     });
   };
   renderResults();
@@ -177,7 +177,7 @@ export function renderResults() {
     }
   });
   $('#result-list').innerHTML =
-    `<table><caption>${ranking ? '학번별 최고 기록 · 점수 → 오타 → 시간' : '전체 시도 · 접수 최신순'}</caption><thead><tr>${ranking ? '<th>순위</th>' : ''}<th>참가자</th><th>점수</th><th>타수·오타</th><th>시간</th><th>확인</th><th>상품</th><th>관리</th></tr></thead><tbody>${
+    `<table><caption>${ranking ? '학번별 최고 기록 · 점수 → 오타 → 시간' : '전체 시도 · 최근순'}</caption><thead><tr>${ranking ? '<th>순위</th>' : ''}<th>참가자</th><th>점수</th><th>타수·오타</th><th>시간</th><th>확인</th><th>상품</th><th>관리</th></tr></thead><tbody>${
       records
         .map(
           (item) => {
@@ -187,7 +187,7 @@ export function renderResults() {
             const identity = item.loginId || (isRecordEntry(item) ? '—' : '기존 계정');
             const identityNote = isRecordEntry(item) ? `${identity} · 직접 입력` : identity;
             return `<tr>
-    ${ranking ? `<td>${item.rank ?? '—'}${item.practice ? ' (연습)' : ''}</td>` : ''}<td>${html(item.displayName)}<small>${html(identityNote)}${duplicate ? ' · 공식 학번 중복 확인' : ''}</small></td><td>${item.score}</td><td>${item.speed} / ${item.errors}</td><td>${(item.elapsedMs / 1000).toFixed(2)}초</td>
+    ${ranking ? `<td>${item.rank ?? '—'}</td>` : ''}<td>${html(item.displayName)}<small>${html(identityNote)}${duplicate ? ' · 학번 중복 확인' : ''}</small></td><td>${item.score}</td><td>${item.speed} / ${item.errors}</td><td>${(item.elapsedMs / 1000).toFixed(2)}초</td>
     <td>${select(`review-${item.id}`, '확인', item.verificationStatus ?? 'pending', Object.entries(verification))}</td>
     <td><button data-prize="${item.id}"${item.practice || item.verificationStatus !== 'verified' ? ' disabled' : ''}>${item.prizeReceived ? '수령' : '미수령'}</button></td>
     <td><button class="danger" data-delete="${item.id}">기록 삭제</button></td></tr>`;

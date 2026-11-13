@@ -1,5 +1,5 @@
 import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js?v=ops-20261113';
-import { submitTyping, readChallenge, validateTypingResult } from '../db/database.js?v=ops-20261113';
+import { submitTyping, readChallenge, validateTypingResult } from '../db/database.js?v=typing-fix-20261113';
 
 import { toCsv, validateParticipant } from '../common.js?v=record-entry-1';
 import { rankResults, rankedAttempts } from './scoring.js?v=record-entry-1';

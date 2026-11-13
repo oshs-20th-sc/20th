@@ -1,5 +1,5 @@
 import { getPublicDb, errorMessage } from '../db/firebase.js?v=ops-20261113';
-import { readEvent, readChallenge } from '../db/database.js?v=ops-20261113';
+import { readEvent, readChallenge } from '../db/database.js?v=typing-fix-20261113';
 import { mountLogin } from '../login.js?v=ops-20261113';
 import { downloadFile } from '../common.js?v=record-entry-1';
 import {
@@ -8,9 +8,9 @@ import {
   compositionStart,
   compositionEnd,
   isComplete,
-} from './engine.js';
+} from './engine.js?v=typing-fix-20261113';
 import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=record-entry-1';
-import { saveResult } from './storage.js?v=ops-20261113';
+import { saveResult } from './storage.js?v=typing-fix-20261113';
 
 const elements = Object.fromEntries(
   [
@@ -49,6 +49,8 @@ let timer = null;
 let sessionVersion = 0;
 let needsBackup = false;
 let filePrepared = false;
+let pendingEdit = null;
+let deletionKey = '';
 
 function message(text, isError = false) {
   elements.feedback.textContent = text;
@@ -112,11 +114,8 @@ function highlight(value) {
 
 function eventStatus() {
   if (!config || !challenge) return;
-  elements['event-status'].textContent = !config.typingEnabled
-    ? '접수 마감'
-    : !challenge.enabled || challenge.deleted
-      ? '문구 접수 중지'
-      : `${challenge.practice ? '연습' : '공식'} · ${challenge.referenceKeystrokes}타`;
+  elements['event-status'].textContent = '';
+  elements['event-status'].hidden = true;
 }
 
 async function refresh() {
@@ -135,6 +134,7 @@ async function refresh() {
   } catch (reason) {
     config = null;
     challenge = null;
+    elements['event-status'].hidden = false;
     elements['event-status'].textContent = errorMessage(reason);
     elements.reload.hidden = false;
     throw reason;
@@ -186,12 +186,12 @@ async function persist(record) {
   }
 }
 
-function process(value, endedComposition = false) {
+function process(value, endedComposition = false, edit) {
   if (!['armed', 'running'].includes(status) || !attempt) return;
   if (value.length) beginTiming();
   engine = endedComposition
     ? compositionEnd(engine, value, attempt.text)
-    : commitInput(engine, value, attempt.text);
+    : commitInput(engine, value, attempt.text, edit);
   elements.errors.textContent = engine.errors;
   highlight(value);
   message(`입력 ${Array.from(value).length} / ${Array.from(attempt.text).length}자`);
@@ -214,7 +214,7 @@ function process(value, endedComposition = false) {
     errors: engine.errors,
     completedAt: new Date().toISOString(),
     prizeReceived: false,
-    practice: attempt.practice,
+    practice: false,
   };
   elements.elapsed.textContent = (elapsed / 1000).toFixed(2);
   elements.score.textContent = result.score;
@@ -235,15 +235,8 @@ async function prepareAttempt() {
   try {
     const current = await refresh();
     if (version !== sessionVersion) return;
-    if (
-      !current.config.typingEnabled ||
-      !current.challenge.enabled ||
-      current.challenge.deleted
-    ) {
-      message('현재 접수할 수 없습니다.', true);
-      return;
-    }
-    attempt = { ...current.challenge, errorPenalty: EVENT_ERROR_PENALTY };
+    if (current.challenge.deleted) throw new Error('사용할 문구가 삭제되었습니다. 운영진에게 알려 주세요.');
+    attempt = { ...current.challenge, practice: false, errorPenalty: EVENT_ERROR_PENALTY };
     engine = initialInputState();
     startedAt = null;
     elapsed = 0;
@@ -263,6 +256,12 @@ async function prepareAttempt() {
 }
 
 const input = elements['typing-input'];
+input.addEventListener('keydown', (event) => {
+  deletionKey = event.key === 'Backspace'
+    ? 'deleteContentBackward'
+    : event.key === 'Delete' ? 'deleteContentForward' : '';
+});
+input.addEventListener('keyup', () => { deletionKey = ''; });
 for (const name of ['paste', 'drop'])
   input.addEventListener(name, (event) => {
     event.preventDefault();
@@ -270,18 +269,37 @@ for (const name of ['paste', 'drop'])
   });
 input.addEventListener('beforeinput', (event) => {
   const type = event.inputType ?? '';
+  pendingEdit = null;
   if (/Paste|Drop|Replacement|history|Yank/i.test(type)) {
     event.preventDefault();
     message('직접 입력하세요.', true);
-  } else if (type.startsWith('insert')) beginTiming();
+  } else {
+    pendingEdit = {
+      inputType: deletionKey || type,
+      start: input.selectionStart,
+      end: input.selectionEnd,
+    };
+    if (pendingEdit.inputType.startsWith('insert')) beginTiming();
+  }
 });
 input.addEventListener('compositionstart', () => {
   if (!['armed', 'running'].includes(status)) return;
-  beginTiming();
-  engine = compositionStart(engine);
+  if (!deletionKey) beginTiming();
+  engine = compositionStart(engine, { start: input.selectionStart, end: input.selectionEnd });
 });
-input.addEventListener('compositionend', () => process(input.value, true));
-input.addEventListener('input', () => process(input.value));
+input.addEventListener('compositionend', () => {
+  // Some IMEs end composition before dispatching the final input event.
+  const edit = pendingEdit ?? (deletionKey ? { inputType: deletionKey } : null);
+  if (edit && engine.composing && attempt)
+    engine = commitInput(engine, input.value, attempt.text, edit);
+  pendingEdit = null;
+  process(input.value, true);
+});
+input.addEventListener('input', (event) => {
+  const edit = pendingEdit ?? { inputType: deletionKey || event.inputType || '' };
+  pendingEdit = null;
+  process(input.value, false, edit);
+});
 window.addEventListener('blur', () => {
   if (status === 'running') invalidate('창 이탈로 중단했습니다. 기록은 저장하지 않았습니다.');
 });
@@ -327,6 +345,8 @@ elements['rescue-confirm'].addEventListener('click', () => {
   message('저장한 기록 파일을 운영진에게 전달하세요.');
 });
 function clearAttempt() {
+  pendingEdit = null;
+  deletionKey = '';
   attempt = null;
   engine = initialInputState();
   startedAt = null;

@@ -124,7 +124,7 @@ async function selectSource() {
   mode = 'live';
   const [{ getPublicDb }, publicApi] = await Promise.all([
     import('../db/firebase.js?v=ops-20261113'),
-    import('../db/public.js?v=ops-20261113'),
+    import('../db/public.js?v=typing-fix-20261113'),
   ]);
   liveApi = publicApi;
   liveDb = await getPublicDb();
