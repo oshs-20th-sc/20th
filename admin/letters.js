@@ -1,5 +1,5 @@
 /** Admin actions for submitted letters. */
-import { adminContext } from '../db/firebase.js';
+import { adminContext } from '../db/firebase.js?v=ops-20261113';
 import {
   deleteLetter,
   exportFirebase,
@@ -10,7 +10,7 @@ import {
   reviewLetters,
   saveLetter,
   synchronizePublicLetters,
-} from '../db/database.js';
+} from '../db/database.js?v=ops-20261113';
 import { downloadFile, escapeHtml as html, koreanDate } from '../common.js';
 import {
   $,
@@ -29,9 +29,9 @@ import {
   select,
   setStatus,
   submit,
-} from './shared.js';
-import { renderTab } from './shared.js';
-import { state } from './state.js';
+} from './shared.js?v=ops-20261113';
+import { renderTab } from './shared.js?v=ops-20261113';
+import { state } from './state.js?v=ops-20261113';
 
 export function lettersView() {
   const trash = state.letterFilter.status === 'trash';
@@ -105,7 +105,7 @@ export function renderLetters() {
     <div class="section-top"><div class="record-heading">${trash ? '' : `<input type="checkbox" data-select-letter="${letter.id}" aria-label="${html(`${letter.nickname || '익명'} 글 선택`)}">`}<strong>${html(letter.nickname || '익명')}</strong></div><span class="badge" data-status="${html(trash ? 'trash' : letter.status)}">${html(trash ? '휴지통' : labels[letter.status])}</span></div>
     <p class="letter-content">${html(letter.content)}</p><small>${html(koreanDate(letter.created_at))} · 순서 ${letter.publish_order ?? '미지정'}</small>
     <p class="muted">${html(letterAuthor(letter))}</p>
-    <div class="actions">${trash ? `<button data-restore-letter="${letter.id}">복원</button><button class="danger" data-purge-letter="${letter.id}">영구 삭제</button>` : `<button data-review-letter="${letter.id}" data-review-status="approved"${letter.status === 'approved' ? ' disabled' : ''}>승인</button><button data-review-letter="${letter.id}" data-review-status="rejected"${letter.status === 'rejected' ? ' disabled' : ''}>제외</button><button data-edit="${letter.id}">수정</button>${state.students.some((student) => student.student_id === letter.owner_uid) ? `<button data-letter-student="${letter.id}">작성 계정</button>` : ''}<button class="danger" data-delete="${letter.id}">휴지통</button>`}<button data-letter-history="${letter.id}">이력</button></div><div data-history-for="${letter.id}" hidden></div></article>`,
+    <div class="actions">${trash ? `<button data-restore-letter="${letter.id}">복원</button><button class="danger" data-purge-letter="${letter.id}">영구 삭제</button>` : `<button data-review-letter="${letter.id}" data-review-status="approved"${letter.status === 'approved' ? ' disabled' : ''}>승인</button><button data-review-letter="${letter.id}" data-review-status="rejected"${letter.status === 'rejected' ? ' disabled' : ''}>제외</button><button data-edit="${letter.id}">수정</button><button class="danger" data-delete="${letter.id}">휴지통</button>`}<button data-letter-history="${letter.id}">이력</button></div><div data-history-for="${letter.id}" hidden></div></article>`,
       )
       .join('') || '<p>글 없음</p>';
   document.querySelectorAll('[data-select-letter]').forEach((control) => {
@@ -160,14 +160,6 @@ export function renderLetters() {
     button.onclick = () => toggleLetterHistory(button.dataset.letterHistory);
   });
   cursorPagination('letters');
-  document.querySelectorAll('[data-letter-student]').forEach((button) => {
-    button.onclick = () => {
-      if (state.busy || !confirmDiscard()) return;
-      const letter = state.letters.find((item) => item.id === button.dataset.letterStudent);
-      state.pendingStudentDetail = { id: letter.owner_uid, letterId: letter.id };
-      location.hash = '#students';
-    };
-  });
 }
 
 export function updateLetterSelection() {
@@ -278,12 +270,7 @@ export function letterChanges(before, after) {
 export function letterAuthor(letter) {
   if (letter.student_number || letter.student_name)
     return `학번 ${letter.student_number || '—'} · 이름 ${letter.student_name || '—'}`;
-  const student = state.students.find((item) => item.student_id === letter.owner_uid);
-  return student
-    ? `작성 계정: ${student.login_id || '현재 학번 미연결'} ${student.student_name}`
-    : letter.owner_uid
-      ? '기존 계정 글 · 명부 연결 전'
-      : '관리자 작성 기록';
+  return letter.owner_uid ? '기존 계정 글' : '관리자 작성 기록';
 }
 
 export function letterEditor(letter) {

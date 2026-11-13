@@ -6,14 +6,7 @@
 // publicLetters/{UUID}: id, nickname, content, order, sort_order; sanitized approved projection only.
 // typingResults/{UUID}: legacy UID rows or E-mode private school number/name, score, verification and prize state.
 // receipts/{UUID}: immutable receipt metadata; official-20261123-{school5} records are private one-time claims.
-// rateLimits/{uid}: legacy authenticated-submission throttling only.
-// students/{opaque 20-character UID}: student_id is the same internal UID (not a school number).
-// student_name, admission_year, is_active, write_blocked,
-// blocked_until timestamp/null, created_at/updated_at timestamps; optional login_id current5digits, last_moderation_id UUID.
-// Legacy 7-digit document IDs remain accepted only during migration/backup recovery.
-// moderationLogs/{UUID}: target_student_id, action, reason(1..500), operator_uid,
-// related_letter_id UUID/null, created_at; immutable admin-only audit history.
-// settings/sessionPolicy: boothMode bool, idleMinutes int(1..120), academicYear int(2020..2100), updated_at.
+// settings/sessionPolicy: boothMode bool, idleMinutes int(1..120), updated_at.
 // letterTrash/{UUID}: private original letter snapshot, trashed_at/by, last_history_id UUID.
 // letterLogs/{UUID[-restore|-purge]}: letter_id, operator_uid, action, before/after snapshots,
 // created_at; immutable and admin-only. Live letters may carry last_history_id.
@@ -95,13 +88,7 @@ service cloud.firestore {
     }
     function recoveryOwner(data) {
       return admin() && studentUid(data.owner_uid)
-        && data.participantId == data.owner_uid
-        && exists(/databases/$(database)/documents/students/$(data.owner_uid))
-        && get(/databases/$(database)/documents/students/$(data.owner_uid)).data.student_id == data.owner_uid;
-    }
-    function freshRate(id, kind) {
-      let rate = getAfter(/databases/$(database)/documents/rateLimits/$(request.auth.uid)).data;
-      return rate.last_event_id == id && rate.kind == kind && rate.last_write_at == request.time;
+        && data.participantId == data.owner_uid;
     }
     function text(value, minimum, maximum) {
       // RE2 counts Unicode code points, matching the form's Array.from counter.
@@ -109,74 +96,12 @@ service cloud.firestore {
         && value.trim() == value;
     }
 
-    function validStudent(data, id) {
-      return studentUid(id)
-        && data.keys().hasAll(['student_id', 'student_name', 'admission_year', 'is_active', 'write_blocked', 'blocked_until', 'created_at', 'updated_at'])
-        && data.keys().hasOnly(['student_id', 'student_name', 'admission_year', 'is_active', 'write_blocked', 'blocked_until', 'created_at', 'updated_at', 'last_moderation_id', 'login_id'])
-        && data.student_id == id && text(data.student_name, 1, 30)
-        && data.admission_year is int && data.admission_year >= 2020 && data.admission_year <= 2099
-        && (!id.matches('[0-9]{7}') || id.matches(string(data.admission_year - 2000) + '[0-9]{5}'))
-        && data.is_active is bool && data.write_blocked is bool
-        && (data.blocked_until == null || data.blocked_until is timestamp)
-        && (data.write_blocked || data.blocked_until == null)
-        && data.created_at is timestamp && data.updated_at is timestamp
-        && (!('last_moderation_id' in data) || uuid(data.last_moderation_id))
-        && (!('login_id' in data) || (data.login_id is string && data.login_id.matches('[1-3][0-9]{4}')));
-    }
-    function moderationChange(action, before, after) {
-      return (action == 'block_write' && after.is_active == before.is_active && after.write_blocked
-          && (after.blocked_until == null || after.blocked_until > request.time)
-          && (after.write_blocked != before.write_blocked || after.blocked_until != before.blocked_until))
-        || (action == 'unblock_write' && after.is_active == before.is_active && !after.write_blocked
-          && after.blocked_until == null && (before.write_blocked || before.blocked_until != null))
-        || (action == 'deactivate' && before.is_active && !after.is_active
-          && after.write_blocked == before.write_blocked && after.blocked_until == before.blocked_until)
-        || (action == 'activate' && !before.is_active && after.is_active
-          && after.write_blocked == before.write_blocked && after.blocked_until == before.blocked_until);
-    }
-    function studentAudit(id, before, after) {
-      let logId = after.last_moderation_id;
-      let log = getAfter(/databases/$(database)/documents/moderationLogs/$(logId)).data;
-      return uuid(logId) && before.get('last_moderation_id', '') != logId
-        && !exists(/databases/$(database)/documents/moderationLogs/$(logId))
-        && log.target_student_id == id && log.operator_uid == request.auth.uid && log.created_at == request.time
-        && moderationChange(log.action, before, after);
-    }
-    match /students/{id} {
-      allow get: if admin();
-      allow list: if admin();
-      // Provisioning and password operations use the server Admin SDK only.
-      allow create, delete: if false;
-      allow update: if admin() && validStudent(request.resource.data, id)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['is_active', 'write_blocked', 'blocked_until', 'updated_at', 'last_moderation_id'])
-        && request.resource.data.updated_at == request.time
-        && studentAudit(id, resource.data, request.resource.data);
-    }
-    match /moderationLogs/{id} {
-      function valid(data) {
-        let after = getAfter(/databases/$(database)/documents/students/$(data.target_student_id)).data;
-        let before = get(/databases/$(database)/documents/students/$(data.target_student_id)).data;
-        return uuid(id)
-          && data.keys().hasAll(['target_student_id', 'action', 'reason', 'operator_uid', 'related_letter_id', 'created_at'])
-          && data.keys().hasOnly(['target_student_id', 'action', 'reason', 'operator_uid', 'related_letter_id', 'created_at'])
-          && studentUid(data.target_student_id)
-          && text(data.reason, 1, 500) && data.operator_uid == request.auth.uid && data.created_at == request.time
-          && data.action in ['block_write', 'unblock_write', 'deactivate', 'activate']
-          && (data.related_letter_id == null || (uuid(data.related_letter_id)
-            && get(/databases/$(database)/documents/letters/$(data.related_letter_id)).data.owner_uid == data.target_student_id))
-          && after.last_moderation_id == id && after.updated_at == request.time
-          && moderationChange(data.action, before, after);
-      }
-      allow read: if admin();
-      allow create: if admin() && valid(request.resource.data);
-      allow update, delete: if false;
-    }
     match /settings/sessionPolicy {
       function valid(data) {
-        return data.keys().hasAll(['boothMode', 'idleMinutes', 'academicYear', 'updated_at'])
+        return data.keys().hasAll(['boothMode', 'idleMinutes', 'updated_at'])
           && data.keys().hasOnly(['boothMode', 'idleMinutes', 'academicYear', 'updated_at'])
           && data.boothMode is bool && data.idleMinutes is int && data.idleMinutes >= 1 && data.idleMinutes <= 120
-          && data.academicYear is int && data.academicYear >= 2020 && data.academicYear <= 2100
+          && (!('academicYear' in data) || (data.academicYear is int && data.academicYear >= 2020 && data.academicYear <= 2100))
           && data.updated_at == request.time;
       }
       allow get: if true;
@@ -230,24 +155,6 @@ service cloud.firestore {
       allow delete: if admin() && (!existsAfter(/databases/$(database)/documents/settings/event)
         || getAfter(/databases/$(database)/documents/settings/event).data.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0') != id);
     }
-    match /rateLimits/{uid} {
-      function shape() {
-        let data = request.resource.data;
-        return admin() && uid == request.auth.uid && data.keys().hasOnly(['window_start', 'count', 'last_write_at', 'last_event_id', 'kind'])
-          && data.count is int && data.count > 0 && data.count <= 600 && data.window_start is timestamp
-          && data.last_write_at == request.time && uuid(data.last_event_id) && data.kind in ['letter', 'typing']
-          && newReceipt(data.last_event_id, data.kind);
-      }
-      allow get: if admin() && uid == request.auth.uid;
-      allow create: if shape() && request.resource.data.window_start == request.time && request.resource.data.count == 1;
-      allow update: if shape() && (
-        (request.time - resource.data.window_start >= duration.value(60, 's')
-          && request.resource.data.window_start == request.time && request.resource.data.count == 1)
-        || (request.time - resource.data.window_start < duration.value(60, 's')
-          && request.resource.data.window_start == resource.data.window_start && request.resource.data.count == resource.data.count + 1)
-      );
-      allow list, delete: if false;
-    }
     match /receipts/{id} {
       function targetExists(data) {
         return data.get('entry_mode', '') == 'record'
@@ -282,7 +189,7 @@ service cloud.firestore {
           || (request.resource.data.kind == 'typing' && recoveryOwner(getAfter(/databases/$(database)/documents/typingResults/$(id)).data)))
         && request.resource.data.kind in ['letter', 'typing'] && request.resource.data.created_at == request.time
         && request.resource.data.payload_hash is string && request.resource.data.payload_hash.matches('[0-9a-f]{64}')
-        && targetExists(request.resource.data) && freshRate(id, request.resource.data.kind))
+        && targetExists(request.resource.data))
         || validOfficialClaim(id, request.resource.data, true) && (admin() || !signedIn());
       allow list: if admin();
       allow update, delete: if false;
@@ -498,27 +405,20 @@ service cloud.firestore {
       function adminRecordEntry(data, id) {
         return admin() && data.entry_mode == 'record' && data.owner_uid == null
           && valid(data) && data.received_at == request.time && data.reviewed_at == request.time
-          && (data.practice || officialClaimReady(id, data))
-          && (!existsAfter(/databases/$(database)/documents/receipts/$(id))
-            || recordReceipt(id, 'typing'));
+          && data.prizeReceived == false && data.verificationStatus == 'pending'
+          && (data.practice || officialClaimReady(id, data)) && recordReceipt(id, 'typing');
       }
       allow read: if admin();
-      // Operators may recover queued booth records after the public event closes.
+      // Only pending, receipted backup recovery is allowed; manual result creation has no UI/API.
       allow create: if publicRecordEntry(request.resource.data, id)
         || adminRecordEntry(request.resource.data, id)
-        || (admin() && valid(request.resource.data)
-          && (request.resource.data.owner_uid == request.auth.uid || recoveryOwner(request.resource.data))
+        || (admin() && valid(request.resource.data) && recoveryOwner(request.resource.data)
           && request.resource.data.received_at == request.time
-          && ((request.resource.data.reviewed_at == request.time)
-            || (request.resource.data.prizeReceived == false
-              && request.resource.data.verificationStatus == 'pending'
-              && request.resource.data.reviewed_at == null
-              && get(/databases/$(database)/documents/challenges/$(request.resource.data.challengeId)).data.enabled == true
-              && newReceipt(id, 'typing'))));
+          && request.resource.data.prizeReceived == false
+          && request.resource.data.verificationStatus == 'pending'
+          && request.resource.data.reviewed_at == null && newReceipt(id, 'typing'));
       allow update: if admin() && valid(request.resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['participantId', 'displayName', 'challengeId', 'practice', 'elapsedMs', 'speed', 'errors', 'score', 'prizeReceived', 'verificationStatus', 'reviewed_at', 'duplicate_of'])
-        && (resource.data.get('entry_mode', '') != 'record' || resource.data.practice
-          || request.resource.data.participantId == resource.data.participantId)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prizeReceived', 'verificationStatus', 'reviewed_at'])
         && request.resource.data.reviewed_at == request.time;
       allow delete: if admin();
     }

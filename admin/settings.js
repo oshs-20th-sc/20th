@@ -1,5 +1,5 @@
 /** Event, session, and typing challenge settings. */
-import { adminContext } from '../db/firebase.js';
+import { adminContext } from '../db/firebase.js?v=ops-20261113';
 import {
   changeChallenge,
   deleteChallenge,
@@ -7,10 +7,10 @@ import {
   readEvent,
   saveChallenge,
   setEvent,
-} from '../db/database.js';
+} from '../db/database.js?v=ops-20261113';
 import { countKeystrokes } from '../typing/scoring.js';
 import { escapeHtml as html } from '../common.js';
-import { readSessionPolicy, saveSessionPolicy } from '../db/students.js';
+import { readSessionPolicy, saveSessionPolicy } from '../db/database.js?v=ops-20261113';
 import {
   $,
   area,
@@ -24,8 +24,8 @@ import {
   select,
   setStatus,
   submit,
-} from './shared.js';
-import { state, feature } from './state.js';
+} from './shared.js?v=ops-20261113';
+import { state, feature } from './state.js?v=ops-20261113';
 
 export function settingsView() {
   $('#view').innerHTML = `<form class="panel" id="event-settings"><h2>운영 설정</h2>
@@ -48,10 +48,9 @@ export function settingsView() {
     )}
     <p class="muted">행사일 2026. 11. 23.(월) · 점심시간 현장 참여</p>
     <p class="muted">정확한 점심시간은 운영진 현장 안내에 따릅니다. 접수는 A 단계에서만 가능합니다.</p><button>저장</button></form>
-    <form class="panel" id="session-policy"><h2>학생 로그인 설정</h2>
+    <form class="panel" id="session-policy"><h2>공용 기기 설정</h2>
     ${checkbox('boothMode', '공용 기기 모드', state.sessionPolicy.boothMode)}
     ${field('idleMinutes', '미사용 로그아웃 (분)', state.sessionPolicy.idleMinutes, 'number', 'required min="1" max="120" step="1"')}
-    ${field('academicYear', '기준 학년도', state.sessionPolicy.academicYear, 'number', 'required min="2020" max="2100" step="1"')}
     <button>저장</button></form>
     ${feature === 'typing' ? '<section class="panel"><h2>문구</h2><button id="new-challenge">추가</button><div id="challenges"></div></section><div id="editor"></div>' : ''}`;
   submit($('#event-settings'), async (values) => {
@@ -84,7 +83,6 @@ export function renderChallenges() {
       (
         item,
       ) => `<article class="record"><strong>${html(item.title)}</strong> · ${item.practice ? '연습' : '공식'} · ${item.referenceKeystrokes}타 · 행사 오타 감점 3점
-    <small>기존 계정 기록 계산용 감점: ${item.errorPenalty ?? 3}점</small>
     <p class="letter-content">${html(item.text)}</p><small>${html(item.challengeId)}</small><div class="actions">
     <button data-edit="${item.challengeId}">수정</button><button data-toggle="${item.challengeId}"${item.challengeId === state.config?.activeChallengeId ? ' disabled' : ''}>${item.enabled ? '접수 끄기' : '접수 켜기'}</button><button class="danger" data-delete="${item.challengeId}"${item.challengeId === state.config?.activeChallengeId ? ' disabled' : ''}>영구 삭제</button></div></article>`,
     )
@@ -102,7 +100,7 @@ export function renderChallenges() {
     if (
       button.dataset.delete &&
       !confirm(
-        '문구를 영구 삭제할까요? 기존 타자 기록은 보존되지만 이 문구로 새 기록을 접수하거나 과거 점수를 수정할 수 없습니다.',
+        '문구를 영구 삭제할까요? 기존 타자 기록은 보존되지만 이 문구로 새 기록을 접수할 수 없습니다.',
       )
     )
       return;
@@ -129,8 +127,8 @@ export function challengeEditor(challenge) {
   const creationKey = challenge ? undefined : crypto.randomUUID();
   $('#editor').innerHTML =
     `<form id="challenge-editor" class="panel"><h2>문구 ${challenge ? '수정' : '추가'}</h2>
-    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}${field('errorPenalty', '기존 계정 기록 계산용 오타 감점', challenge ? (challenge.errorPenalty ?? 3) : 3, 'number', 'required min="0" max="100" step="1"')}${checkbox('practice', '연습', challenge?.practice ?? true)}
-    <p class="muted">학번 입력 방식의 공식 기록은 행사 기준인 오타당 3점으로 계산합니다.</p>
+    ${field('title', '제목', challenge?.title, 'text', 'required maxlength="80"')}${area('text', '문구', challenge?.text)}${checkbox('practice', '연습', challenge?.practice ?? true)}
+    <p class="muted">공식 대회는 오타당 3점 감점합니다.</p>
     <p id="keys"></p><div class="actions"><button>${challenge ? '수정 저장' : '추가'}</button><button type="button" id="close-editor">취소</button></div></form>`;
   $('#editor').scrollIntoView({ block: 'start' });
   $('#close-editor').onclick = closeEditor;
@@ -150,7 +148,6 @@ export function challengeEditor(challenge) {
         title: values.title,
         text: values.text,
         practice: !!values.practice,
-        errorPenalty: Number(values.errorPenalty),
       },
       challenge,
       creationKey,

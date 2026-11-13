@@ -53,6 +53,11 @@
 #feedback.error {
   color: #a11111;
 }
+@media (min-height: 701px) {
+  #login .login-panel {
+    margin-top: clamp(120px, calc(50vh - 220px), 320px);
+  }
+}
 @media (max-width: 600px) {
   .metrics {
     gap: 6px;

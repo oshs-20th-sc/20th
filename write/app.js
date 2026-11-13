@@ -1,6 +1,6 @@
-import { errorMessage, getPublicDb } from '../db/firebase.js';
-import { readEvent } from '../db/public.js';
-import { submitLetter } from '../db/database.js?v=record-entry-1';
+import { errorMessage, getPublicDb } from '../db/firebase.js?v=ops-20261113';
+import { readEvent } from '../db/public.js?v=ops-20261113';
+import { submitLetter } from '../db/database.js?v=ops-20261113';
 import { normalizeText, unicodeLength, validateSubmission } from '../common.js?v=record-entry-1';
 
 const form = document.querySelector('#write-form');
@@ -48,13 +48,14 @@ function updateControls() {
     input.disabled = locked;
   submitButton.disabled =
     busy || !!eventRequest || (!pending && !config?.submissionsEnabled);
+  eventStatus.hidden = accepted || (!!config?.submissionsEnabled && !eventRequest);
   eventStatus.textContent = eventRequest
     ? '접수 상태 확인 중'
-    : config
-      ? config.submissionsEnabled
-        ? '접수 중'
-        : '접수 마감'
-      : '접수 상태 확인 실패';
+    : config?.submissionsEnabled
+      ? ''
+      : config
+        ? '접수 마감'
+        : '접수 상태 확인 실패';
   submitButton.textContent = busy ? '제출 중' : pending ? '다시 제출' : '제출';
   resetButton.disabled = busy || !hasInput();
   pendingStatus.hidden = !pending || busy;

@@ -11,7 +11,7 @@ import {
 } from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
 import { UUID_PATTERN } from '../common.js';
 import { CHALLENGE } from '../typing/challenge.js';
-import { ClientError, withDeadline } from './firebase.js';
+import { ClientError, withDeadline } from './firebase.js?v=ops-20261113';
 
 function publicLetter(snapshot) {
   const data = snapshot.data();

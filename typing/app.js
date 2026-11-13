@@ -1,6 +1,6 @@
-import { getPublicDb, errorMessage } from '../db/firebase.js';
-import { readEvent, readChallenge } from '../db/database.js?v=record-entry-1';
-import { mountLogin } from '../login.js?v=record-entry-2';
+import { getPublicDb, errorMessage } from '../db/firebase.js?v=ops-20261113';
+import { readEvent, readChallenge } from '../db/database.js?v=ops-20261113';
+import { mountLogin } from '../login.js?v=ops-20261113';
 import { downloadFile } from '../common.js?v=record-entry-1';
 import {
   initialInputState,
@@ -10,7 +10,7 @@ import {
   isComplete,
 } from './engine.js';
 import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=record-entry-1';
-import { saveResult } from './storage.js?v=record-entry-1';
+import { saveResult } from './storage.js?v=ops-20261113';
 
 const elements = Object.fromEntries(
   [

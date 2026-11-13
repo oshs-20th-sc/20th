@@ -26,11 +26,10 @@ import {
 } from '../common.js?v=record-entry-1';
 import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=record-entry-1';
 import { CHALLENGE } from '../typing/challenge.js';
-import { ClientError, withDeadline, adminContext, STUDENT_UID_PATTERN } from './firebase.js';
-export const RATE_LIMIT = 600;
+import { ClientError, withDeadline, adminContext } from './firebase.js?v=ops-20261113';
 export const PAGE_SIZE = 100;
 const OFFICIAL_CLAIM_PREFIX = 'official-20261123-';
-export { readEvent, readPublicLetters, readPublicLetter } from './public.js';
+export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=ops-20261113';
 export async function payloadHash(payload) {
   const bytes = await crypto.subtle.digest(
     'SHA-256',
@@ -40,63 +39,6 @@ export async function payloadHash(payload) {
     '',
   );
 }
-async function createOnce(db, uid, id, kind, payload, ownerUid = uid) {
-  const hash = await payloadHash(payload);
-  return withDeadline(
-    runTransaction(db, async (tx) => {
-      const receiptRef = doc(db, 'receipts', id);
-      const receipt = await tx.get(receiptRef);
-      if (receipt.exists()) {
-        if (receipt.data().payload_hash !== hash || receipt.data().kind !== kind)
-          throw new ClientError(
-            '동일 접수번호에 다른 내용이 연결되어 있습니다. 원래 내용으로 재시도해 주세요.',
-            409,
-            'KEY_CONFLICT',
-          );
-        return {
-          id,
-          replayed: true,
-        };
-      }
-      const rateRef = doc(db, 'rateLimits', uid);
-      const rate = await tx.get(rateRef);
-      const previous = rate.data();
-      const currentWindow =
-        previous?.window_start instanceof Timestamp &&
-        Date.now() - previous.window_start.toMillis() < 60000;
-      if (currentWindow && Number(previous?.count) >= RATE_LIMIT)
-        throw new ClientError(
-          '이 기기의 제출 요청이 많습니다. 1분 후 다시 시도해 주세요.',
-          429,
-          'RATE_LIMITED',
-        );
-      tx.set(rateRef, {
-        window_start: currentWindow ? previous.window_start : serverTimestamp(),
-        count: currentWindow ? Number(previous.count) + 1 : 1,
-        last_write_at: serverTimestamp(),
-        last_event_id: id,
-        kind,
-      });
-      tx.set(receiptRef, {
-        id,
-        owner_uid: ownerUid,
-        kind,
-        payload_hash: hash,
-        created_at: serverTimestamp(),
-      });
-      tx.set(doc(db, kind === 'letter' ? 'letters' : 'typingResults', id), {
-        ...payload,
-        owner_uid: ownerUid,
-        [kind === 'letter' ? 'created_at' : 'received_at']: serverTimestamp(),
-      });
-      return {
-        id,
-        replayed: false,
-      };
-    }),
-  );
-}
-
 function receiptConflict(kind) {
   return new ClientError(
     kind === 'typing'
@@ -107,11 +49,12 @@ function receiptConflict(kind) {
   );
 }
 
-async function existingRecordReceipt(db, id, kind, hash) {
+async function existingRecordReceipt(db, id, kind, hash, legacyHash = null) {
   const saved = await withDeadline(getDoc(doc(db, 'receipts', id)));
   if (!saved.exists()) return null;
   const data = saved.data();
-  if (data.entry_mode === 'record' && data.kind === kind && data.payload_hash === hash)
+  if (data.entry_mode === 'record' && data.kind === kind &&
+      (data.payload_hash === hash || (legacyHash && data.payload_hash === legacyHash)))
     return { id, replayed: true };
   throw new ClientError(
     '동일 접수번호에 다른 내용이 연결되어 있습니다. 원래 내용으로 다시 시도해 주세요.',
@@ -130,8 +73,11 @@ async function createRecordOnce(
   { claimStudentNumber = null, asAdmin = false } = {},
 ) {
   if (!UUID_PATTERN.test(id)) throw new ClientError('접수 ID가 올바르지 않습니다.', 400);
-  const hash = await payloadHash(payload);
-  const replay = await existingRecordReceipt(db, id, kind, hash);
+  // Recovery changes only the review timestamp, not the original receipt payload.
+  const recovery = asAdmin && kind === 'typing';
+  const hash = await payloadHash(recovery ? { ...payload, reviewed_at: null } : payload);
+  const legacyHash = recovery ? await payloadHash(payload) : null;
+  const replay = await existingRecordReceipt(db, id, kind, hash, legacyHash);
   if (replay) return replay;
 
   const batch = writeBatch(db);
@@ -181,7 +127,7 @@ async function createRecordOnce(
   } catch (error) {
     // A timed-out/ambiguous acknowledgement may still have committed. Only an
     // exact receipt match is treated as success; otherwise preserve the error.
-    const committed = await existingRecordReceipt(db, id, kind, hash).catch(() => null);
+    const committed = await existingRecordReceipt(db, id, kind, hash, legacyHash).catch(() => null);
     if (committed) return committed;
     if (error?.code === 'permission-denied') throw receiptConflict(kind);
     throw error;
@@ -239,20 +185,6 @@ export function validateTypingResult(input, challenge = CHALLENGE) {
   if (input.speed !== computed.speed || input.score !== computed.score)
     throw new ClientError('타수와 최종 점수 계산이 일치하지 않습니다.', 400, 'INVALID_SCORE');
 }
-async function submissionStudent(db, uid, writing = false) {
-  if (!STUDENT_UID_PATTERN.test(uid)) throw new ClientError('학생 로그인이 필요합니다.', 401);
-  const snapshot = await withDeadline(getDoc(doc(db, 'students', uid)));
-  const student = snapshot.data();
-  if (student?.student_id !== uid || student?.is_active !== true)
-    throw new ClientError('계정을 사용할 수 없습니다. 운영진에게 문의하세요.', 403);
-  if (
-    writing &&
-    student.write_blocked &&
-    (!student.blocked_until || student.blocked_until.toMillis() > Date.now())
-  )
-    throw new ClientError('글 작성이 제한된 계정입니다. 운영진에게 문의하세요.', 403);
-  return student;
-}
 export async function submitTyping(db, participant, result, { asAdmin = false } = {}) {
   if (!asAdmin) {
     const identity = validateParticipant(participant);
@@ -281,7 +213,6 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
     });
   }
 
-  const uid = participant;
   if (result.entry_mode === 'record' || result.entryMode === 'record') {
     const challenge = await readChallenge(db, result.challengeId);
     const identity = validateParticipant({
@@ -312,26 +243,15 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
       asAdmin: true,
     });
   }
-  const [student, challenge] = await Promise.all([
-    asAdmin ? null : submissionStudent(db, uid),
-    readChallenge(db, result.challengeId),
-  ]);
-  if (!asAdmin) {
-    if (result.participantId !== uid || result.displayName !== student.student_name)
-      throw new ClientError('로그인 계정과 참가 정보가 일치하지 않습니다.', 403);
-  }
+  const challenge = await readChallenge(db, result.challengeId);
   validateTypingResult(result, challenge);
-  const ownerUid = asAdmin && result.owner_uid ? result.owner_uid : uid;
-  if (asAdmin && ownerUid !== uid) {
-    if (!STUDENT_UID_PATTERN.test(ownerUid) || result.participantId !== ownerUid)
-      throw new ClientError('복구할 기록의 작성 계정이 일치하지 않습니다.', 400);
-    const original = await withDeadline(getDoc(doc(db, 'students', ownerUid)));
-    if (original.data()?.student_id !== ownerUid)
-      throw new ClientError('원래 학생 계정의 명부를 확인해 주세요.', 400);
-  }
+  const ownerUid = result.owner_uid || result.participantId;
+  if (!/^(?:[A-Za-z0-9_-]{20}|[0-9]{7})$/.test(ownerUid) || result.participantId !== ownerUid)
+    throw new ClientError('복구할 기록의 원래 참가 정보가 일치하지 않습니다.', 400);
+  // Preserve the historical receipt field order/hash for acknowledged UID backups.
   const payload = {
     id: result.id,
-    participantId: normalizeText(result.participantId),
+    participantId: result.participantId,
     displayName: normalizeText(result.displayName),
     challengeId: result.challengeId,
     elapsedMs: result.elapsedMs,
@@ -344,7 +264,22 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
     verificationStatus: 'pending',
     reviewed_at: null,
   };
-  return createOnce(db, uid, result.id, 'typing', payload, ownerUid);
+  const hash = await payloadHash(payload);
+  return withDeadline(runTransaction(db, async (tx) => {
+    const receiptRef = doc(db, 'receipts', result.id);
+    const receipt = await tx.get(receiptRef);
+    if (receipt.exists()) {
+      if (receipt.data().kind !== 'typing' || receipt.data().payload_hash !== hash)
+        throw new ClientError('같은 접수번호에 다른 기록이 있습니다.', 409, 'KEY_CONFLICT');
+      return { id: result.id, replayed: true };
+    }
+    tx.set(receiptRef, { id: result.id, owner_uid: ownerUid, kind: 'typing',
+      payload_hash: hash, created_at: serverTimestamp() });
+    tx.set(doc(db, 'typingResults', result.id), {
+      ...payload, owner_uid: ownerUid, received_at: serverTimestamp(),
+    });
+    return { id: result.id, replayed: false };
+  }));
 }
 export const dateString = (value) =>
   value instanceof Timestamp
@@ -856,14 +791,40 @@ export async function synchronizePublicLetters(db) {
   }
   return changes.length;
 }
+// Recorded scores, timing and participant identity cannot be edited after submission.
 export async function reviewTyping(db, id, patch) {
   if (!UUID_PATTERN.test(id)) throw new ClientError('기록 ID가 올바르지 않습니다.', 400);
-  await withDeadline(
-    updateDoc(doc(db, 'typingResults', id), {
-      ...patch,
-      reviewed_at: serverTimestamp(),
-    }),
-  );
+  if (!patch || typeof patch !== 'object' || !Object.keys(patch).length ||
+      Object.keys(patch).some((key) => !['verificationStatus', 'prizeReceived'].includes(key)) ||
+      ('verificationStatus' in patch && !['pending', 'verified', 'rejected'].includes(patch.verificationStatus)) ||
+      ('prizeReceived' in patch && typeof patch.prizeReceived !== 'boolean'))
+    throw new ClientError('검수·상품 수령 상태만 변경할 수 있습니다.', 400);
+  await withDeadline(runTransaction(db, async (tx) => {
+    const ref = doc(db, 'typingResults', id);
+    const saved = await tx.get(ref);
+    if (!saved.exists()) throw new ClientError('이미 삭제된 기록입니다.', 404);
+    const before = saved.data();
+    const after = { ...patch };
+    if ('verificationStatus' in patch && patch.verificationStatus !== 'verified') after.prizeReceived = false;
+    if ((after.prizeReceived ?? before.prizeReceived) &&
+        (before.practice || (after.verificationStatus ?? before.verificationStatus) !== 'verified'))
+      throw new ClientError('확인된 공식 기록만 상품 수령을 표시할 수 있습니다.', 400);
+    if (Object.entries(after).every(([key, value]) => before[key] === value)) return;
+    tx.update(ref, { ...after, reviewed_at: serverTimestamp() });
+  }));
+}
+export const DEFAULT_SESSION_POLICY = { boothMode: true, idleMinutes: 10 };
+export async function readSessionPolicy(db) {
+  const saved = await withDeadline(getDoc(doc(db, 'settings', 'sessionPolicy')));
+  return saved.exists() ? saved.data() : { ...DEFAULT_SESSION_POLICY };
+}
+export async function saveSessionPolicy(db, value) {
+  const idleMinutes = Number(value.idleMinutes);
+  if (!Number.isInteger(idleMinutes) || idleMinutes < 1 || idleMinutes > 120)
+    throw new ClientError('미사용 시간은 1~120분으로 입력하세요.', 400);
+  await withDeadline(setDoc(doc(db, 'settings', 'sessionPolicy'), {
+    boothMode: value.boothMode === true, idleMinutes, updated_at: serverTimestamp(),
+  }));
 }
 export async function setEvent(db, phase, options) {
   await withDeadline(
@@ -958,112 +919,6 @@ export async function deleteChallenge(db, id) {
     throw new ClientError('문구 ID를 확인하세요.', 400);
   await withDeadline(deleteDoc(doc(db, 'challenges', id)));
 }
-export async function saveTyping(db, uid, id, input, creationKey = crypto.randomUUID()) {
-  const challenge = await readChallenge(db, input.challengeId);
-  const recordMode = input.entry_mode === 'record' || input.entryMode === 'record';
-  const computed = calculateScore(
-    challenge.referenceKeystrokes,
-    input.elapsedMs,
-    input.errors,
-    recordMode ? 3 : challenge.errorPenalty,
-  );
-  const data = recordMode
-    ? {
-        entry_mode: 'record',
-        owner_uid: null,
-        participantId: normalizeText(input.participantId),
-        displayName: normalizeText(input.displayName),
-        challengeId: challenge.challengeId,
-        elapsedMs: input.elapsedMs,
-        speed: computed.speed,
-        errors: input.errors,
-        score: computed.score,
-        completedAt: input.completedAt,
-        practice: challenge.practice,
-        prizeReceived: input.prizeReceived === true,
-        verificationStatus: input.verificationStatus ?? 'pending',
-      }
-    : {
-        ...input,
-        ...computed,
-        participantId: normalizeText(input.participantId),
-        displayName: normalizeText(input.displayName),
-        practice: challenge.practice,
-        verificationStatus: input.verificationStatus ?? 'pending',
-      };
-  if (
-    !data.participantId ||
-    !data.displayName ||
-    unicodeLength(data.participantId) > 30 ||
-    unicodeLength(data.displayName) > 30 ||
-    input.elapsedMs > 3600000 ||
-    input.errors > 10000 ||
-    (input.prizeReceived && (challenge.practice || data.verificationStatus !== 'verified'))
-  )
-    throw new ClientError('참가 정보·시간·오타와 상품 수령 조건을 확인해 주세요.', 400);
-  if (recordMode && !validateParticipant({
-    studentNumber: data.participantId,
-    name: data.displayName,
-  }).value)
-    throw new ClientError('학번과 이름을 확인해 주세요.', 400, 'INVALID_PARTICIPANT');
-  const key = id ?? creationKey;
-  if (!UUID_PATTERN.test(key)) throw new ClientError('기록 ID가 올바르지 않습니다.', 400);
-  const ref = doc(db, 'typingResults', key);
-  await withDeadline(
-    runTransaction(db, async (tx) => {
-      const previous = await tx.get(ref);
-      if (id && !previous.exists())
-        throw new ClientError('이미 삭제된 기록입니다. 목록을 새로고침해 주세요.', 404);
-      const old = previous.exists() ? previous.data() : null;
-      const savedRecordMode = recordMode || old?.entry_mode === 'record';
-      if (
-        savedRecordMode &&
-        old?.entry_mode === 'record' &&
-        !old.practice &&
-        data.participantId !== old.participantId
-      )
-        throw new ClientError(
-          '공식 기록의 학번은 참여 제한 정보와 연결되어 있어 수정할 수 없습니다.',
-          409,
-          'OFFICIAL_ID_LOCKED',
-        );
-
-      let after = old
-        ? {
-            ...old,
-            ...data,
-            ...(savedRecordMode ? { entry_mode: 'record', owner_uid: null } : {}),
-            ...(savedRecordMode && !data.completedAt ? { completedAt: old.completedAt } : {}),
-            reviewed_at: serverTimestamp(),
-          }
-        : {
-            ...data,
-            id: key,
-            ...(savedRecordMode ? { entry_mode: 'record', owner_uid: null } : { owner_uid: uid }),
-            completedAt: data.completedAt || new Date().toISOString(),
-            received_at: serverTimestamp(),
-            reviewed_at: serverTimestamp(),
-          };
-
-      if (savedRecordMode && !after.practice) {
-        const claimRef = doc(db, 'receipts', `${OFFICIAL_CLAIM_PREFIX}${after.participantId}`);
-        const claim = await tx.get(claimRef);
-        if (!claim.exists()) {
-          tx.set(claimRef, {
-            kind: 'typingEntry',
-            result_id: key,
-            student_number: after.participantId,
-            created_at: serverTimestamp(),
-          });
-        } else if (claim.data().result_id !== key) {
-          after = { ...after, duplicate_of: claim.data().result_id };
-        }
-      }
-      tx.set(ref, after);
-    }),
-  );
-  return key;
-}
 export async function deleteTyping(db, id) {
   await withDeadline(deleteDoc(doc(db, 'typingResults', id)));
 }
@@ -1089,8 +944,6 @@ export async function createPrivateBackup(db) {
     'receipts',
     'challenges',
     'publicLetters',
-    'students',
-    'moderationLogs',
     'letterTrash',
     'letterLogs',
   ]) {

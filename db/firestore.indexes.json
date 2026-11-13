@@ -161,34 +161,6 @@
     {
       "fields": [
         {
-          "fieldPath": "owner_uid",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "created_at",
-          "order": "DESCENDING"
-        }
-      ],
-      "collectionGroup": "letters",
-      "queryScope": "COLLECTION"
-    },
-    {
-      "fields": [
-        {
-          "fieldPath": "target_student_id",
-          "order": "ASCENDING"
-        },
-        {
-          "fieldPath": "created_at",
-          "order": "DESCENDING"
-        }
-      ],
-      "collectionGroup": "moderationLogs",
-      "queryScope": "COLLECTION"
-    },
-    {
-      "fields": [
-        {
           "fieldPath": "letter_id",
           "order": "ASCENDING"
         },

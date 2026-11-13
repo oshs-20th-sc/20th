@@ -118,12 +118,11 @@ function loadAuthSdk() {
       }));
 }
 let authGeneration = 0;
-const authIntents = { student: 0, admin: 0 };
+const authIntents = { admin: 0 };
 let authMutations = Promise.resolve();
 
 function nextLogin(kind) {
   const generation = ++authGeneration;
-  authIntents.student = generation;
   authIntents.admin = generation;
   return { kind, generation };
 }
@@ -171,7 +170,7 @@ async function temporaryLogin(clients, intent, email, password, verify) {
     const { user, session } = await withDeadline(validation);
     return await mutateAuth(async () => {
       requireCurrentLogin(intent);
-      const target = intent.kind === 'student' ? clients.studentAuth : clients.adminAuth;
+      const target = clients.adminAuth;
       await authSdk.updateCurrentUser(target, user);
       try {
         requireCurrentLogin(intent);
@@ -192,7 +191,6 @@ async function clearLoginSessions(clients, intent) {
   await mutateAuth(async () => {
     requireCurrentLogin(intent);
     await authSdk.signOut(clients.adminAuth);
-    if (intent.kind === 'student') await authSdk.signOut(clients.studentAuth);
     requireCurrentLogin(intent);
   });
 }
@@ -247,11 +245,7 @@ export function getPublicDb() {
   }));
 }
 async function initialize() {
-  const [{ config, emulator, suffix }, deviceDb] = await Promise.all([
-    getConnection(),
-    getPublicDb(),
-    loadAuthSdk(),
-  ]);
+  const [{ config, emulator, suffix }] = await Promise.all([getConnection(), loadAuthSdk()]);
   const apps = [];
   try {
     const adminApp = initializeApp(config, `ohsung-admin-${suffix}`);
@@ -280,33 +274,9 @@ async function initialize() {
         else throw error;
       }
     }
-    const policySnapshot = await withDeadline(
-      getDoc(doc(deviceDb, 'settings', 'sessionPolicy')),
-    ).catch(() => null);
-    const policy = sessionPolicy(policySnapshot?.data());
-    const studentApp = initializeApp(config, `ohsung-student-${suffix}`);
-    apps.push(studentApp);
-    const studentAuth = authSdk.initializeAuth(studentApp, {
-      persistence: authSdk.browserSessionPersistence,
-    });
-    if (emulator)
-      authSdk.connectAuthEmulator(studentAuth, 'http://127.0.0.1:9098', {
-        disableWarnings: true,
-      });
-    const studentDb = getFirestore(studentApp);
-    if (emulator) connectFirestoreEmulator(studentDb, '127.0.0.1', 8088);
-    await studentAuth.authStateReady();
-    if (policy.boothMode) {
-      await authSdk.setPersistence(studentAuth, authSdk.inMemoryPersistence);
-      await authSdk.signOut(studentAuth);
-    }
     return {
       adminAuth,
-      deviceDb,
       adminDb,
-      studentAuth,
-      studentDb,
-      policy,
       emulator,
       projectId: config.projectId,
     };
@@ -331,196 +301,7 @@ export function sessionPolicy(data) {
       Number.isInteger(data?.idleMinutes) && data.idleMinutes >= 1 && data.idleMinutes <= 120
         ? data.idleMinutes
         : 10,
-    academicYear: Number.isInteger(data?.academicYear) ? data.academicYear : 2026,
   };
-}
-export const STUDENT_UID_PATTERN = /^(?:[A-Za-z0-9_-]{20}|[0-9]{7})$/;
-export function studentEmail(loginId, projectId) {
-  if (typeof loginId !== 'string' || !/^[1-3][0-9]{4}$/.test(loginId))
-    throw new ClientError('현재 학번 5자리를 확인해 주세요.', 400);
-  return `${loginId}@students.${projectId}.invalid`;
-}
-function studentProfile(user, data, projectId) {
-  if (
-    !user ||
-    user.isAnonymous ||
-    !STUDENT_UID_PATTERN.test(user.uid) ||
-    typeof data?.login_id !== 'string' ||
-    !/^[1-3][0-9]{4}$/.test(data.login_id) ||
-    user.email !== studentEmail(data.login_id, projectId) ||
-    data?.student_id !== user.uid ||
-    data?.is_active !== true ||
-    typeof data.student_name !== 'string'
-  )
-    throw new ClientError(
-      '계정을 사용할 수 없습니다. 운영진에게 문의하세요.',
-      403,
-      'STUDENT_UNAVAILABLE',
-    );
-  return {
-    uid: user.uid,
-    studentId: user.uid,
-    loginId: data.login_id ?? null,
-    name: data.student_name,
-    admissionYear: data.admission_year,
-    writeBlocked:
-      data.write_blocked === true &&
-      (!data.blocked_until || data.blocked_until.toMillis() > Date.now()),
-    blockedUntil: data.blocked_until ?? null,
-  };
-}
-export async function studentSession() {
-  const clients = await getClients();
-  await clients.studentAuth.authStateReady();
-  const user = clients.studentAuth.currentUser;
-  if (!user) return null;
-  const record = await withDeadline(getDoc(doc(clients.studentDb, 'students', user.uid)));
-  return studentProfile(user, record.data(), clients.projectId);
-}
-export async function loginStudent(id, password) {
-  const intent = nextLogin('student');
-  const clients = await getClients();
-  await clients.policyTransition;
-  await clearLoginSessions(clients, intent);
-  try {
-    return await temporaryLogin(
-      clients,
-      intent,
-      studentEmail(id, clients.projectId),
-      password,
-      async (user, db) => {
-        const record = await getDoc(doc(db, 'students', user.uid));
-        const profile = studentProfile(user, record.data(), clients.projectId);
-        if (profile.loginId !== id)
-          throw new ClientError('계정을 사용할 수 없습니다. 운영진에게 문의하세요.', 403);
-        return profile;
-      },
-    );
-  } catch (reason) {
-    throw firebaseError(reason);
-  }
-}
-export async function logoutStudent() {
-  const generation = invalidateLogin('student');
-  const { studentAuth } = await getClients();
-  await mutateAuth(async () => {
-    if (authIntents.student === generation) await authSdk.signOut(studentAuth);
-  });
-}
-export async function changeStudentPassword(currentPassword, nextPassword) {
-  if (
-    typeof nextPassword !== 'string' ||
-    nextPassword.length < 8 ||
-    nextPassword.length > 4096
-  )
-    throw new ClientError('새 비밀번호는 8~4096자로 입력해 주세요.', 400);
-  if (!currentPassword || currentPassword === nextPassword)
-    throw new ClientError('기존 비밀번호와 다른 새 비밀번호를 입력해 주세요.', 400);
-  const intent = { kind: 'student', generation: authIntents.student };
-  const { studentAuth } = await getClients();
-  const user = studentAuth.currentUser;
-  const profile = await studentSession();
-  if (!user?.email || !profile || profile.uid !== user.uid)
-    throw new ClientError('다시 로그인한 뒤 비밀번호를 변경해 주세요.', 401);
-  return mutateAuth(async () => {
-    const checkSession = () => {
-      requireCurrentLogin(intent);
-      if (studentAuth.currentUser !== user)
-        throw new ClientError('로그인 상태가 바뀌었습니다. 다시 로그인해 주세요.', 401);
-    };
-    checkSession();
-    try {
-      await authSdk.reauthenticateWithCredential(
-        user,
-        authSdk.EmailAuthProvider.credential(user.email, currentPassword),
-      );
-    } catch (error) {
-      if (['auth/invalid-credential', 'auth/wrong-password'].includes(error.code))
-        throw new ClientError('기존 비밀번호를 확인해 주세요.', 401, error.code);
-      throw firebaseError(error);
-    }
-    checkSession();
-    // Keep Auth changes serialized until the actual request finishes, including on slow networks.
-    await authSdk.updatePassword(user, nextPassword);
-  });
-}
-export async function studentContext({ writing = false } = {}) {
-  const student = await studentSession();
-  if (!student) throw new ClientError('로그인이 필요합니다.', 401, 'STUDENT_LOGIN_REQUIRED');
-  if (writing && student.writeBlocked)
-    throw new ClientError(
-      '글 작성이 제한된 계정입니다. 운영진에게 문의하세요.',
-      403,
-      'WRITE_BLOCKED',
-    );
-  return { ...student, db: (await getClients()).studentDb };
-}
-export async function watchStudentSession(onChange, onError) {
-  const clients = await getClients();
-  let stopProfile = () => {};
-  let sequence = 0;
-  const stopAuth = authSdk.onIdTokenChanged(clients.studentAuth, (user) => {
-    const current = ++sequence;
-    stopProfile();
-    if (!user) {
-      onChange(null);
-      return;
-    }
-    stopProfile = onSnapshot(
-      doc(clients.studentDb, 'students', user.uid),
-      (snapshot) => {
-        if (current !== sequence) return;
-        let profile;
-        try {
-          profile = studentProfile(user, snapshot.data(), clients.projectId);
-        } catch (reason) {
-          void logoutStudent();
-          onError(reason);
-          return;
-        }
-        onChange(profile);
-      },
-      (reason) => {
-        if (current === sequence) {
-          void logoutStudent();
-          onError(reason);
-        }
-      },
-    );
-  });
-  return () => {
-    sequence++;
-    stopProfile();
-    stopAuth();
-  };
-}
-export async function watchSessionPolicy(onChange, onError) {
-  const clients = await getClients();
-  return onSnapshot(
-    doc(clients.deviceDb, 'settings', 'sessionPolicy'),
-    (snapshot) => {
-      const next = sessionPolicy(snapshot.data());
-      const changed = next.boothMode !== clients.policy.boothMode;
-      Object.assign(clients.policy, next);
-      if (changed) {
-        invalidateLogin('student');
-        clients.policyTransition = mutateAuth(async () => {
-          try {
-            await authSdk.setPersistence(
-              clients.studentAuth,
-              next.boothMode ? authSdk.inMemoryPersistence : authSdk.browserSessionPersistence,
-            );
-          } finally {
-            await authSdk.signOut(clients.studentAuth);
-          }
-        });
-        // Keep a failed transition rejected so a later login cannot use the old persistence.
-        void clients.policyTransition.catch(onError);
-      }
-      onChange(next);
-    },
-    onError,
-  );
 }
 export async function adminSession() {
   const { adminAuth, adminDb } = await getClients();

@@ -7,8 +7,8 @@ import {
   outsideSource,
   privateOutput,
   retryFileOperation,
-  processRoster,
-} from './import-students.mjs';
+  processRows,
+} from './private-files.mjs';
 
 const legacy = [
   'letters',
@@ -169,7 +169,7 @@ export async function restoreBackup(
   const records = validateBackup(backup);
   if (backup.projectId !== db.projectId && !allowProjectChange)
     throw new Error('PROJECT_MISMATCH');
-  const preflight = await processRoster(
+  const preflight = await processRows(
     records,
     concurrency,
     async (row) => {
@@ -189,7 +189,7 @@ export async function restoreBackup(
   if (!apply || preflight.some((row) => row.status === 'conflict'))
     return { applied: false, includesAuthentication: false, results: preflight };
   if (!Timestamp) throw new Error('TIMESTAMP_SDK_REQUIRED');
-  const results = await processRoster(
+  const results = await processRows(
     records,
     concurrency,
     async (row) => {

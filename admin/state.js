@@ -1,5 +1,5 @@
 /** Mutable state shared by the admin entrypoint and feature modules. */
-import { DEFAULT_SESSION_POLICY } from '../db/students.js';
+import { DEFAULT_SESSION_POLICY } from '../db/database.js?v=ops-20261113';
 
 export const feature = document.body.dataset.feature;
 export const state = {
@@ -9,12 +9,7 @@ export const state = {
   letters: [],
   results: [],
   challenges: [],
-  students: [],
   sessionPolicy: { ...DEFAULT_SESSION_POLICY },
-  studentFilter: { query: '', grade: '', unlinkedOnly: false },
-  studentPage: 1,
-  studentDetailSequence: 0,
-  pendingStudentDetail: null,
   config: undefined,
   letterPage: 1,
   resultPage: 1,
@@ -29,9 +24,5 @@ export const state = {
   resultFilter: { query: '', version: null, verification: 'all', view: 'ranking' },
   renderedHash: location.hash,
   savedForms: new WeakMap(),
-  rosterCache: null,
-  rosterExpiresAt: 0,
-  rosterRequest: null,
-  rosterRevision: 0,
   listCache: new Map(),
 };

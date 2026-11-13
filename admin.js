@@ -5,11 +5,10 @@ import {
   watchAdminSession,
   errorMessage,
   resetAdminPassword,
-} from './db/firebase.js';
-import { readLettersPage, readTypingPage, readChallenges, readEvent } from './db/database.js';
-import { readSessionPolicy, readStudentsByIds, findStudentsByLogin } from './db/students.js';
+} from './db/firebase.js?v=ops-20261113';
+import { readLettersPage, readTypingPage, readChallenges, readEvent, readSessionPolicy } from './db/database.js?v=ops-20261113';
 import { escapeHtml as html, localHref } from './common.js';
-import { state, feature } from './admin/state.js';
+import { state, feature } from './admin/state.js?v=ops-20261113';
 import {
   root,
   featureTitle,
@@ -29,39 +28,25 @@ import {
   resetLetterPages,
   resetResultPages,
   bindRenderTab,
-} from './admin/shared.js';
-import {
-  clearStudentRoster,
-  loadStudentRoster,
-  studentsView,
-  studentDetail,
-} from './admin/students.js';
-import { lettersView } from './admin/letters.js';
-import { recordsView } from './admin/typing.js';
-import { settingsView } from './admin/settings.js';
-import { accountView } from './admin/account.js';
-
-const CURRENT_STUDENT_NUMBER = /^[1-3][0-9]{4}$/;
-
-function isRecordTypingEntry(item) {
-  return item?.entryMode === 'record' ||
-    item?.entry_mode === 'record' ||
-    CURRENT_STUDENT_NUMBER.test(item?.participantId ?? '');
-}
+} from './admin/shared.js?v=ops-20261113';
+import { lettersView } from './admin/letters.js?v=ops-20261113';
+import { recordsView } from './admin/typing.js?v=ops-20261113';
+import { settingsView } from './admin/settings.js?v=ops-20261113';
+import { accountView } from './admin/account.js?v=ops-20261113';
 
 function applySession(next) {
   const entering = !state.session.authenticated || next.uid !== state.session.uid;
   if (!next.authenticated || next.uid !== state.session.uid) {
     state.viewSequence++;
-    clearStudentRoster();
+    invalidateListCache();
+    resetLetterPages();
+    resetResultPages();
   }
   state.session = next;
   if (!next.authenticated) {
-    state.pendingStudentDetail = null;
     state.letters = [];
     state.results = [];
     state.challenges = [];
-    state.students = [];
     state.config = undefined;
     if (!$('#login')) showLogin();
   } else if (entering) showAdmin();
@@ -70,12 +55,13 @@ function applySession(next) {
 
 function sessionFailed(reason) {
   state.viewSequence++;
-  clearStudentRoster();
+  invalidateListCache();
+  resetLetterPages();
+  resetResultPages();
   state.session = { authenticated: false };
   state.letters = [];
   state.results = [];
   state.challenges = [];
-  state.students = [];
   state.config = undefined;
   showLogin(errorMessage(reason));
 }
@@ -118,7 +104,7 @@ function showLogin(error = '') {
 function showAdmin() {
   root.innerHTML = `<header class="page-header"><h1>${featureTitle}</h1><a href="${html(localHref('../'))}">돌아가기</a></header>${managementLinks()}
     <div class="section-top"><span id="identity">${html(state.session.email)}</span><button id="logout">로그아웃</button></div>
-    <nav class="admin-nav" aria-label="관리자 메뉴"><a href="#${firstTab}">${feature === 'typing' ? '타자 기록' : '글'}</a><a href="#students">학생</a><a href="#settings">설정</a><a href="#account">계정</a></nav>
+    <nav class="admin-nav" aria-label="관리자 메뉴"><a href="#${firstTab}">${feature === 'typing' ? '타자 기록' : '글'}</a><a href="#settings">설정</a><a href="#account">계정</a></nav>
     <p id="status" role="status" hidden></p><div id="view"></div>`;
   $('#logout').onclick = () =>
     void run(async () => {
@@ -132,11 +118,11 @@ function showAdmin() {
   void renderTab();
 }
 
-async function renderTab(forceStudents = false) {
+async function renderTab(forceReload = false) {
   if (!state.session.authenticated || !confirmDiscard()) return;
   const sequence = ++state.viewSequence;
   state.renderedHash = location.hash;
-  const tab = ['settings', 'account', 'students', firstTab].includes(location.hash.slice(1))
+  const tab = ['settings', 'account', firstTab].includes(location.hash.slice(1))
     ? location.hash.slice(1)
     : firstTab;
   document.querySelectorAll('.admin-nav a').forEach((link) => {
@@ -152,7 +138,7 @@ async function renderTab(forceStudents = false) {
     const { db } = await adminContext();
     let loaded;
     let fromCache = false;
-    if (forceStudents === true) {
+    if (forceReload === true) {
       invalidateListCache();
       resetLetterPages();
       resetResultPages();
@@ -168,13 +154,7 @@ async function renderTab(forceStudents = false) {
         trash: state.letterFilter.status === 'trash',
         cursor: state.letterCursors[state.letterPage - 1],
       });
-      loaded = [
-        page,
-        await readStudentsByIds(
-          db,
-          page.items.map((item) => item.owner_uid),
-        ),
-      ];
+      loaded = page;
     }
     if (tab === 'records' && !loaded) {
       const [versions, event] = await Promise.all([
@@ -189,23 +169,12 @@ async function renderTab(forceStudents = false) {
           versions[0]?.challengeId ||
           '';
       }
-      const queryText = state.resultFilter.query.trim().toLowerCase();
       if (!state.resultFilter.version) state.resultFilter.view = 'attempts';
-      const matched = await findStudentsByLogin(db, queryText);
       const page = await readTypingPage(db, {
         ...state.resultFilter,
-        participantIds: [
-          ...matched.map((item) => item.student_id),
-          ...(CURRENT_STUDENT_NUMBER.test(queryText) ? [queryText] : []),
-        ],
         cursor: state.resultCursors[state.resultPage - 1],
       });
-      const ids = [...new Set(page.items
-        .filter((item) => !isRecordTypingEntry(item))
-        .map((item) => item.participantId))];
-      const known = matched.filter((student) => ids.includes(student.student_id));
-      const missing = ids.filter((id) => !known.some((student) => student.student_id === id));
-      loaded = [page, versions, [...known, ...(await readStudentsByIds(db, missing))]];
+      loaded = [page, versions];
     }
     if (tab === 'settings') {
       loaded = await Promise.all([
@@ -214,42 +183,25 @@ async function renderTab(forceStudents = false) {
         readSessionPolicy(db),
       ]);
     }
-    if (tab === 'students') {
-      loaded = await Promise.all([
-        loadStudentRoster(db, forceStudents === true),
-        readSessionPolicy(db),
-      ]);
-    }
     if (sequence !== state.viewSequence) return;
     if (['letters', 'records'].includes(tab) && !fromCache) rememberList(tab, loaded);
     if (tab === 'letters') {
-      const [page, roster] = loaded;
+      const page = loaded;
       state.letters = page.items;
-      state.students = roster;
       state.letterNext = page.cursor;
       state.letterHasNext = page.hasNext;
       state.selectedLetters.clear();
       lettersView();
     } else if (tab === 'records') {
-      const [page, versions, roster] = loaded;
+      const [page, versions] = loaded;
       state.results = page.items;
       state.challenges = versions;
-      state.students = roster;
       state.resultNext = page.cursor;
       state.resultHasNext = page.hasNext;
       await recordsView();
     } else if (tab === 'settings') {
       [state.config, state.challenges, state.sessionPolicy] = loaded;
       settingsView();
-    } else if (tab === 'students') {
-      [state.students, state.sessionPolicy] = loaded;
-      studentsView();
-      if (state.pendingStudentDetail) {
-        const requested = state.pendingStudentDetail;
-        state.pendingStudentDetail = null;
-        if (state.students.some((student) => student.student_id === requested.id))
-          await studentDetail(requested.id, requested.letterId);
-      }
     } else await accountView(db, sequence);
   } catch (reason) {
     if (sequence === state.viewSequence) {

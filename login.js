@@ -1,4 +1,4 @@
-import { getPublicDb, getDoc, doc, sessionPolicy, loginAdmin, errorMessage } from './db/firebase.js';
+import { getPublicDb, getDoc, doc, sessionPolicy, loginAdmin, errorMessage } from './db/firebase.js?v=ops-20261113';
 import { escapeHtml as html, localHref, validateParticipant } from './common.js?v=record-entry-1';
 
 // 참가 정보만 메모리에 보관합니다. 학생 Auth 계정이나 로그인 토큰을 만들지 않습니다.

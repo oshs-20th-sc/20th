@@ -1,7 +1,7 @@
 /** Shared state helpers and admin UI primitives. */
-import { adminContext, errorMessage } from '../db/firebase.js';
+import { adminContext, errorMessage } from '../db/firebase.js?v=ops-20261113';
 import { escapeHtml as html } from '../common.js';
-import { state, feature } from './state.js';
+import { state, feature } from './state.js?v=ops-20261113';
 
 export const root = document.querySelector('#admin');
 
