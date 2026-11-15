@@ -1,36 +1,59 @@
-// Art derived from the supplied V5 assets/obyeol.svg; parts share one connected body.
-const artwork = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 510" role="img" aria-label="학교 마스코트 오별이">
+// Redrawn from the first supplied Obyeol reference. Keep in sync with assets/obyeol.svg.
+const artwork = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 440" role="img" aria-label="학교 마스코트 오별이">
   <defs>
-    <radialGradient id="__ID__-cheek"><stop stop-color="#ff8b92" stop-opacity=".65" /><stop offset="1" stop-color="#ff8b92" stop-opacity="0" /></radialGradient>
-    <linearGradient id="__ID__-head" x1="0" y1="0" x2=".85" y2="1"><stop stop-color="#ffe993" /><stop offset=".7" stop-color="#ffdf70" /><stop offset="1" stop-color="#ffd45f" /></linearGradient>
+    <linearGradient id="__ID__-head" x1="0" y1="0" x2=".85" y2="1">
+      <stop stop-color="#f9e38e"/>
+      <stop offset=".58" stop-color="#f6d875"/>
+      <stop offset="1" stop-color="#f9df83"/>
+    </linearGradient>
+    <radialGradient id="__ID__-cheek">
+      <stop stop-color="#f08880" stop-opacity=".68"/>
+      <stop offset=".55" stop-color="#f79a83" stop-opacity=".4"/>
+      <stop offset="1" stop-color="#f79a83" stop-opacity="0"/>
+    </radialGradient>
   </defs>
-
-  <ellipse cx="231" cy="463" rx="111" ry="13" fill="#e9b842" opacity=".21" class="ob-shadow" />
-
-  <g class="ob-float"><g class="ob-body"><path d="M186 430 Q179 444 182 459 Q192 466 212 460 L218 441 M252 442 L254 458 Q274 464 283 458 Q284 445 276 430" fill="#fffefb" stroke="#28231f" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
-
-  <path d="M169 258 C145 260 122 276 110 305 Q96 335 109 355 Q121 371 140 360 Q149 354 158 340 L162 413 Q162 443 188 449 Q228 459 274 449 Q299 445 300 416 L304 341 Q313 357 326 362 Q342 368 353 350 Q361 335 344 301 C329 273 309 257 284 258 C250 255 205 255 169 258Z" fill="#fffefa" stroke="#28231f" stroke-width="7" stroke-linecap="round" stroke-linejoin="round" />
-  <g class="ob-hand ob-hand-left"><path d="M115 334 Q100 336 98 350 Q96 368 112 374 Q133 380 147 360 Q153 349 143 339 Q131 329 115 334Z" fill="#fffefa" stroke="#28231f" stroke-width="6" />
-  </g><g class="ob-hand ob-hand-right"><path d="M340 332 Q357 330 364 345 Q371 363 354 373 Q338 381 324 364 Q314 351 325 340 Q331 334 340 332Z" fill="#fffefa" stroke="#28231f" stroke-width="6" />
-
-  </g><circle cx="231" cy="342" r="5" fill="none" stroke="#28231f" stroke-width="4" />
-  <text x="231" y="390" font-family="Arial,sans-serif" text-anchor="middle" font-size="30" font-weight="800" fill="#28231f">S</text>
-
-  <g class="ob-head"><path d="M55 177 C44 141 42 76 63 51 C83 27 124 44 154 57 C183 70 203 88 219 109 C243 72 286 27 334 29 C370 30 384 64 376 112 C373 135 368 149 363 161 C397 172 420 188 420 217 C420 254 371 279 303 291 C238 305 158 298 92 282 C44 269 20 246 24 218 C27 196 39 186 55 177Z" fill="url(#__ID__-head)" stroke="#28231f" stroke-width="8" stroke-linecap="round" stroke-linejoin="round" />
-  <ellipse cx="100" cy="234" rx="41" ry="32" fill="url(#__ID__-cheek)" />
-  <ellipse cx="343" cy="234" rx="41" ry="32" fill="url(#__ID__-cheek)" />
-  <path d="M119 130 Q127 108 146 126 M285 126 Q294 104 312 128" fill="none" stroke="#28231f" stroke-width="6" stroke-linecap="round" class="ob-brows" />
-  <g class="ob-eye ob-eye-left"><g transform="rotate(-12 146 195)">
-    <ellipse cx="146" cy="195" rx="43" ry="41" fill="#fff" stroke="#201d1a" stroke-width="8" />
-    <path d="M109 199 Q142 192 184 192" fill="none" stroke="#201d1a" stroke-width="15" stroke-linecap="round" />
+  <ellipse class="ob-shadow" cx="230" cy="418" rx="137" ry="10" fill="#bc913f" opacity=".16"/>
+  <g class="ob-float">
+    <g class="ob-body" stroke="#23221c" stroke-linecap="round" stroke-linejoin="round">
+      <!-- Broad shoulders sit behind the face; this is the reference's short upper body. -->
+      <path d="M128 279 C100 284 79 309 70 339 C61 366 73 384 99 390 L106 403 Q227 417 351 402 L355 390 C379 386 392 369 382 341 C372 309 349 288 322 281Z" fill="#fffef9" stroke-width="5"/>
+      <path d="M122 337 Q109 351 102 370 M344 339 Q351 355 356 372" fill="none" stroke-width="4"/>
+      <circle cx="231" cy="329" r="8" fill="#fffef9" stroke-width="4"/>
+      <path d="M238 350 C225 341 218 354 231 359 C247 365 238 379 225 370" fill="none" stroke-width="4.5"/>
+      <g class="ob-hand ob-hand-left">
+        <path d="M97 294 C72 286 50 315 52 344 C51 367 69 383 89 377 C115 369 129 335 119 312 C114 301 106 295 97 294Z" fill="url(#__ID__-head)" stroke-width="5"/>
+      </g>
+      <g class="ob-hand ob-hand-right">
+        <path d="M367 354 C382 353 394 365 391 382 C388 399 375 407 360 400 C347 393 349 372 358 361 Q362 356 367 354Z" fill="url(#__ID__-head)" stroke-width="5"/>
+      </g>
+      <g class="ob-head">
+        <path d="M78 183 C65 149 53 91 68 51 C79 18 111 15 144 32 C181 48 208 77 228 104 C253 72 285 42 319 28 C346 16 367 19 376 46 C391 86 383 142 374 184 C399 199 422 220 425 241 C430 270 383 287 321 294 C251 301 157 298 99 289 C60 283 34 271 36 246 C37 222 57 200 78 183Z" fill="url(#__ID__-head)" stroke-width="5"/>
+        <ellipse cx="96" cy="243" rx="43" ry="30" fill="url(#__ID__-cheek)" stroke="none"/>
+        <ellipse cx="353" cy="242" rx="43" ry="30" fill="url(#__ID__-cheek)" stroke="none"/>
+        <path class="ob-brows" d="M134 128 Q142 106 160 120 M275 121 Q286 101 300 121" fill="none" stroke-width="4.5"/>
+        <g class="ob-eye ob-eye-left">
+          <g transform="rotate(-17 160 190)">
+            <ellipse cx="160" cy="190" rx="44" ry="42" fill="#23221c" stroke-width="1"/>
+            <path d="M123 177 C124 161 140 152 157 152 C174 152 187 158 193 169 C197 176 188 180 180 180 L139 183 C129 184 122 183 123 177Z" fill="#fffefc" stroke="none"/>
+            <path d="M129 198 C126 193 132 190 140 190 L184 187 C193 186 198 190 195 199 C190 217 175 228 159 228 C144 228 132 218 127 205 Q124 201 129 198Z" fill="#fffefc" stroke="none"/>
+          </g>
+        </g>
+        <g class="ob-eye ob-eye-right">
+          <g transform="rotate(-15 293 188)">
+            <ellipse cx="293" cy="188" rx="44" ry="42" fill="#23221c" stroke-width="1"/>
+            <path d="M256 175 C257 159 273 150 290 150 C307 150 320 156 326 167 C330 174 321 178 313 178 L272 181 C262 182 255 181 256 175Z" fill="#fffefc" stroke="none"/>
+            <path d="M262 196 C259 191 265 188 273 188 L317 185 C326 184 331 188 328 197 C323 215 308 226 292 226 C277 226 265 216 260 203 Q257 199 262 196Z" fill="#fffefc" stroke="none"/>
+          </g>
+        </g>
+        <path class="ob-mouth ob-mouth-smile" d="M200 238 Q225 245 252 235 C257 263 244 291 226 295 C209 293 201 269 200 238Z" fill="#f398a6" stroke-width="4.5"/>
+        <path d="M91 225 L76 246 M111 232 L99 251 M128 240 L121 255 M337 230 L328 250 M356 222 L345 246 M374 221 L364 242" fill="none" stroke-width="4.5"/>
+        <ellipse class="ob-mouth ob-mouth-surprise" cx="226" cy="264" rx="16" ry="21" fill="#f398a6" stroke-width="4.5" opacity="0"/>
+        <path class="ob-mouth ob-mouth-pout" d="M208 267 Q226 255 245 266" fill="none" stroke-width="4.5" opacity="0"/>
+        <path class="ob-angry-brows" d="M132 121 L169 134 M270 133 L308 119" fill="none" stroke-width="4.5" opacity="0"/>
+      </g>
+    </g>
   </g>
-  </g><g class="ob-eye ob-eye-right"><g transform="rotate(-10 292 192)">
-    <ellipse cx="292" cy="192" rx="43" ry="41" fill="#fff" stroke="#201d1a" stroke-width="8" />
-    <path d="M255 198 Q290 190 331 190" fill="none" stroke="#201d1a" stroke-width="15" stroke-linecap="round" />
-  </g>
-  </g><path d="M208 226 Q227 237 249 222 L249 251 C249 281 236 292 223 280 C211 269 208 248 208 226Z" fill="#ff9db1" stroke="#28231f" stroke-width="6" stroke-linejoin="round" class="ob-mouth ob-mouth-smile" />
-  <path d="M78 234 L68 251 M94 241 L85 258 M109 247 L102 263 M345 235 L351 251 M359 234 L367 250 M372 232 L383 248" stroke="#28231f" stroke-width="5" stroke-linecap="round" />
-<ellipse class="ob-mouth ob-mouth-surprise" cx="230" cy="251" rx="14" ry="19" fill="#ff9db1" stroke="#28231f" stroke-width="6" /><path class="ob-mouth ob-mouth-pout" d="M210 252 Q230 241 250 252" fill="none" stroke="#28231f" stroke-width="6" stroke-linecap="round" /><path class="ob-angry-brows" d="M116 131 L151 141 M280 139 L315 126" fill="none" stroke="#28231f" stroke-width="6" stroke-linecap="round" /></g></g></g></svg>`;
+</svg>`;
 let instance = 0;
 export function mountObyeol(container, caption) {
   container.innerHTML = artwork.replaceAll('__ID__', `obyeol-${++instance}`);
