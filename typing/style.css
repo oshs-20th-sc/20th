@@ -1,21 +1,21 @@
 /* One shell keeps the title, participant and typing area aligned at every stage. */
 .typing-page .container { width: min(1080px, calc(100% - 48px)); padding: 22px 0 18px; }
 .typing-page .inside-nav { margin-bottom: 18px; }
-.typing-shell { display: grid; grid-template-columns: minmax(0, 1fr) 210px; gap: 0 32px; padding: 28px 32px 24px; background: var(--paper); border: 2px solid var(--ink); border-radius: 24px; box-shadow: 0 6px 0 #6b4b201a; }
-.typing-heading { grid-column: 1 / -1; border-bottom: 1px solid var(--line); padding-bottom: 20px; margin-bottom: 22px; }
+.typing-shell { display: grid; grid-template-columns: minmax(0, 1fr) 150px; gap: 0 24px; padding: 28px 32px 24px; background: var(--paper); border: 2px solid var(--ink); border-radius: 24px; box-shadow: 0 6px 0 #6b4b201a; }
+.typing-heading { grid-column: 1; grid-row: 1; align-self: center; padding-bottom: 20px; }
 .typing-heading h1 { font-size: clamp(30px, 3.6vw, 40px); }
 .typing-heading > p:last-child { margin: 9px 0 0; font-size: 13px; color: var(--muted); }
 .typing-heading .intro-kicker { margin: 0 0 7px; }
-.typing-page #login { width: 100%; margin: 0; grid-column: 1; grid-row: 2; min-width: 0; }
-.typing-page #login .login-panel { background: transparent; padding: 10px 0 14px; margin: 0; border: 0; box-shadow: none; }
+.typing-page #login { width: 100%; margin: 0; grid-column: 1 / -1; grid-row: 2; min-width: 0; border-top: 1px solid var(--line); padding-top: 20px; }
+.typing-page #login .login-panel { max-width: 440px; background: transparent; padding: 10px 0 14px; margin: 0 auto; border: 0; box-shadow: none; }
 .typing-page .login-panel h2 { font-size: 21px; margin-bottom: 18px; }
 .typing-page .login-panel button[type='submit'] { margin-top: 20px; }
 .typing-page #entry-form { display: block; }
 .typing-page #student-session { margin: 0 0 18px; padding: 10px 12px; min-height: 53px; background: #fff4d8; border-color: var(--line); gap: 8px; }
 #student-name { font-weight: 750; font-size: 14px; overflow-wrap: anywhere; min-width: 0; }
 #student-session button { min-height: 34px; padding: 5px 11px; font-size: 12px; flex-shrink: 0; }
-#student-view { grid-column: 1; min-width: 0; }
-.has-participant .typing-heading { margin-bottom: 16px; padding-bottom: 16px; }
+#student-view { grid-column: 1 / -1; min-width: 0; }
+.has-participant .typing-heading { padding-bottom: 16px; }
 .has-participant #login { grid-row: 2; }
 .has-participant #student-view { grid-row: 3; }
 .stage-panel .section-top { gap: 8px; align-items: baseline; }
@@ -48,16 +48,16 @@
 .rules-panel ul { padding-left: 19px; margin: 12px 0 0; font-size: 12px; color: var(--muted); }
 .rules-panel li { margin: 6px 0; }
 .typing-page .inside-footer { margin-top: 24px; padding: 13px 0 0; font-size: 11px; }
-/* The mascot occupies its own column, never overlays the input or moves focus. */
-.mascot-aside { grid-column: 2; grid-row: 2 / 4; align-self: start; text-align: center; padding: 20px 0 0; min-width: 0; }
-.mascot-label { display: inline-block; padding: 3px 12px; border: 1px solid #d8c8a6; border-radius: 20px; font-size: 12px; font-weight: 750; background: #fff5dc; }
+/* Keep Obyeol with the title, above the login and typing controls. */
+.mascot-aside { grid-column: 2; grid-row: 1; align-self: center; justify-self: center; width: 126px; text-align: center; padding: 0 0 12px; min-width: 0; }
 .obyeol { width: 100%; aspect-ratio: 460 / 510; }
 .obyeol svg { display: block; width: 100%; height: 100%; overflow: visible; }
-.mascot-aside .obyeol { margin: 12px 0 -3px; }
+.mascot-aside .obyeol { margin: 0; }
+.typing-page:not(.has-participant) #obyeol-message { display: none; }
+.has-participant .mascot-aside { width: 104px; padding-bottom: 10px; }
+.has-participant #login { padding-top: 12px; }
+.has-participant #obyeol-message { min-height: 20px; font-size: 11px; line-height: 1.5; white-space: nowrap; margin-inline: -20px; }
 #obyeol-message { margin: 0; min-height: 42px; font-size: 12px; line-height: 1.6; color: #78613c; }
-.mascot-keyboard { display: flex; justify-content: center; gap: 5px; margin-top: 14px; transform: rotate(-4deg); }
-.mascot-keyboard span { display: grid; place-items: center; width: 31px; height: 30px; border: 1px solid #baaa8b; border-bottom-width: 3px; border-radius: 6px; background: #fffefb; font-size: 12px; color: #74664f; }
-.mascot-keyboard span:last-child { background: #ffdf87; }
 /* Animate composite transforms, not layout. The face and shirt keep overlapping. */
 .ob-float { transform-origin: 230px 440px; animation: ob-float 4s ease-in-out infinite; }
 .ob-body { transform-origin: 230px 440px; }
@@ -124,7 +124,8 @@
   .typing-shell { padding: 18px 28px 15px; }
   .typing-heading { padding-bottom: 14px; margin-bottom: 16px; }
   .typing-heading h1 { font-size: 34px; }
-  .has-participant .typing-heading { padding-bottom: 10px; margin-bottom: 10px; }
+  .has-participant .typing-heading { padding-bottom: 10px; }
+  .has-participant .mascot-aside { width: 90px; }
   .has-participant .typing-heading .intro-kicker { display: none; }
   .has-participant .typing-heading > p:last-child { font-size: 12px; margin-top: 6px; }
   .has-participant .metrics > div { padding-block: 6px; }
@@ -144,13 +145,11 @@
   .typing-heading .intro-kicker { font-size: 10px !important; margin-bottom: 5px; }
   .typing-heading h1 { font-size: 29px; }
   .typing-heading > p:last-child { font-size: 11px; margin-top: 7px; max-width: 230px; }
-  .mascot-aside { grid-column: 2; grid-row: 1; align-self: center; padding: 0; }
+  .mascot-aside { grid-column: 2; grid-row: 1; align-self: center; width: 100%; padding: 0; }
   .mascot-aside .obyeol { margin: -3px 0 0; }
-  .mascot-label { font-size: 9px; padding: 1px 7px; }
   #obyeol-message { font-size: 9px; min-height: 29px; margin: -2px -6px 6px; }
-  .mascot-keyboard { display: none; }
   .typing-page #login { grid-column: 1 / -1; grid-row: 2; }
-  .typing-page #login .login-panel { padding-top: 20px; border-top: 1px solid var(--line); }
+  .typing-page #login .login-panel { padding-top: 0; }
   .typing-page .login-panel h2 { font-size: 18px; margin-bottom: 14px; }
   .typing-page .login-panel label { margin-top: 10px; }
   .typing-page #entry-form { display: block; }
