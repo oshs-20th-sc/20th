@@ -1,4 +1,4 @@
-import { mountObyeol } from './obyeol.js?v=db-schema-5';
+import { mountObyeol } from './obyeol.js?v=typing-certificate-1';
 
 // Presentation only: saving, retries and backups stay in app.js/storage.js.
 export function mountRecordCard() {
@@ -43,7 +43,7 @@ export function mountRecordCard() {
   });
   button.addEventListener('click', open);
   return {
-    show(value) {
+    show(value, initialState = 'saving') {
       record = { ...value };
       for (const [field, text] of Object.entries({
         student: record.participantId,
@@ -54,7 +54,7 @@ export function mountRecordCard() {
         time: (record.elapsedMs / 1000).toFixed(2),
       })) document.getElementById(`record-${field}`).textContent = text;
       button.hidden = false;
-      this.status('saving');
+      this.status(initialState);
       open();
     },
     status(next, needsBackup = false, filePrepared = false, failureReason = '') {

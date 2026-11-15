@@ -8,7 +8,7 @@ import {
   encodeData,
   decodeData,
   fieldPath,
-} from './schema.js?v=db-schema-5';
+} from './schema.js?v=typing-certificate-1';
 const kinds = new WeakMap();
 const rawSnapshots = new WeakMap();
 function tag(ref, kind) {

@@ -26,6 +26,7 @@ import { CHALLENGE } from '/typing/challenge.js';
 import { countKeystrokes } from '/typing/scoring.js';
 export const readEvent = async () => ({activeChallengeId:CHALLENGE.challengeId,phase:'A'});
 export const readChallenge = async () => {const text=window.__challengeText || CHALLENGE.text;return {...CHALLENGE,text,referenceKeystrokes:countKeystrokes(text)}};
+export const readTypingCertificate = async () => null;
 export const validateTypingResult = value => value;
 export async function submitTyping(db, participant, record) {
   window.__submitted.push(structuredClone(record));

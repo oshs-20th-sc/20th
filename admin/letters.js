@@ -1,5 +1,5 @@
 /** Admin actions for submitted letters. */
-import { adminContext } from '../db/firebase.js?v=db-schema-5';
+import { adminContext } from '../db/firebase.js?v=typing-certificate-1';
 import {
   deleteLetter,
   exportFirebase,
@@ -10,7 +10,7 @@ import {
   reviewLetters,
   saveLetter,
   synchronizePublicLetters,
-} from '../db/database.js?v=db-schema-5';
+} from '../db/database.js?v=typing-certificate-1';
 import { downloadFile, escapeHtml as html, koreanDate } from '../common.js';
 import {
   $,
@@ -29,9 +29,9 @@ import {
   select,
   setStatus,
   submit,
-} from './shared.js?v=db-schema-5';
-import { renderTab } from './shared.js?v=db-schema-5';
-import { state } from './state.js?v=db-schema-5';
+} from './shared.js?v=typing-certificate-1';
+import { renderTab } from './shared.js?v=typing-certificate-1';
+import { state } from './state.js?v=typing-certificate-1';
 
 export function lettersView() {
   const trash = state.letterFilter.status === 'trash';

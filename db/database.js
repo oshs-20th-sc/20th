@@ -1,4 +1,4 @@
-import { toCsv, validatePublicData } from '../common.js?v=db-schema-5';
+import { toCsv, validatePublicData } from '../common.js?v=typing-certificate-1';
 import {
   collection,
   doc,
@@ -16,22 +16,23 @@ import {
   writeBatch,
   setDoc,
   deleteDoc,
-} from './store.js?v=db-schema-5';
+} from './store.js?v=typing-certificate-1';
 import {
   normalizeText,
   unicodeLength,
   UUID_PATTERN,
   validateParticipant,
   validateSubmission,
-} from '../common.js?v=db-schema-5';
-import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=db-schema-5';
-import { CHALLENGE } from '../typing/challenge.js?v=db-schema-5';
-import { ClientError, withDeadline, adminContext } from './firebase.js?v=db-schema-5';
-import { readEvent } from './public.js?v=db-schema-5';
-import { COLLECTIONS, SCHEMA_VERSION, encodeData } from './schema.js?v=db-schema-5';
+} from '../common.js?v=typing-certificate-1';
+import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=typing-certificate-1';
+import { CHALLENGE } from '../typing/challenge.js?v=typing-certificate-1';
+import { ClientError, withDeadline, adminContext } from './firebase.js?v=typing-certificate-1';
+import { readEvent } from './public.js?v=typing-certificate-1';
+import { COLLECTIONS, SCHEMA_VERSION, encodeData } from './schema.js?v=typing-certificate-1';
+import { typingCertificateKey, typingCertificate, validTypingCertificate } from './typing-certificate.js?v=typing-certificate-1';
 export const PAGE_SIZE = 100;
 const OFFICIAL_CLAIM_PREFIX = 'official-20261123-';
-export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=db-schema-5';
+export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=typing-certificate-1';
 export async function payloadHash(payload) {
   const bytes = await crypto.subtle.digest(
     'SHA-256',
@@ -72,7 +73,7 @@ async function createRecordOnce(
   id,
   kind,
   payload,
-  { claimStudentNumber = null, asAdmin = false } = {},
+  { claimStudentNumber = null, asAdmin = false, certificate = null } = {},
 ) {
   if (!UUID_PATTERN.test(id)) throw new ClientError('접수 ID가 올바르지 않습니다.', 400);
   // Recovery changes only the review timestamp, not the original receipt payload.
@@ -84,6 +85,7 @@ async function createRecordOnce(
 
   const batch = writeBatch(db);
   let savedPayload = payload;
+  let publishCertificate = !!certificate && !!claimStudentNumber;
   if (claimStudentNumber) {
     const claimId = `${OFFICIAL_CLAIM_PREFIX}${claimStudentNumber}`;
     const claimRef = doc(db, 'typingEntries', claimId);
@@ -91,7 +93,10 @@ async function createRecordOnce(
       const claim = await withDeadline(getDoc(claimRef));
       if (claim.exists()) {
         const previousResult = claim.data().result_id;
-        if (previousResult !== id) savedPayload = { ...payload, duplicate_of: previousResult };
+        if (previousResult !== id) {
+          savedPayload = { ...payload, duplicate_of: previousResult };
+          publishCertificate = false;
+        }
       } else {
         batch.set(claimRef, {
           kind: 'typingEntry',
@@ -123,6 +128,10 @@ async function createRecordOnce(
     payload_hash: hash,
     created_at: serverTimestamp(),
   });
+  if (publishCertificate) {
+    const key = await typingCertificateKey(payload.participantId, payload.displayName);
+    batch.set(doc(db, 'typingCertificates', key), certificate);
+  }
   try {
     await withDeadline(batch.commit());
     return { id, replayed: false };
@@ -214,6 +223,7 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
     validateTypingResult(record, challenge);
     return createRecordOnce(db, record.id, 'typing', record, {
       claimStudentNumber: identity.value.studentNumber,
+      certificate: typingCertificate(record, challenge),
     });
   }
 
@@ -245,6 +255,7 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
     return createRecordOnce(db, record.id, 'typing', record, {
       claimStudentNumber: record.practice ? null : identity.value.studentNumber,
       asAdmin: true,
+      certificate: record.practice ? null : typingCertificate(record, challenge),
     });
   }
   const challenge = await readChallenge(db, result.challengeId);
@@ -411,6 +422,18 @@ export async function readTypingResult(db, id) {
   if (!UUID_PATTERN.test(id)) throw new ClientError('기록 ID를 확인하세요.', 400);
   const saved = await withDeadline(getDoc(doc(db, 'typingResults', id)));
   return saved.exists() ? decodeTyping(saved) : null;
+}
+export async function readTypingCertificate(db, participant) {
+  const checked = validateParticipant(participant);
+  if (!checked.value) throw new ClientError(checked.error, 400, 'INVALID_PARTICIPANT');
+  const key = await typingCertificateKey(checked.value.studentNumber, checked.value.name);
+  const saved = await withDeadline(getDoc(doc(db, 'typingCertificates', key)));
+  if (!saved.exists()) return null;
+  const record = saved.data();
+  if (!validTypingCertificate(record) || record.participantId !== checked.value.studentNumber ||
+      record.displayName !== checked.value.name)
+    throw new ClientError('기존 기록증을 확인하지 못했습니다. 운영진에게 알려 주세요.', 409, 'INVALID_CERTIFICATE');
+  return record;
 }
 function decodeTyping(snapshot) {
   const data = snapshot.data();
@@ -959,9 +982,15 @@ export async function deleteTyping(db, id) {
 
       let claimRef = null;
       let claim = null;
+      let certificateRef = null;
+      let certificate = null;
       if (officialRecord && /^[1-3][0-9]{4}$/.test(data.participantId ?? '')) {
         claimRef = doc(db, 'typingEntries', `${OFFICIAL_CLAIM_PREFIX}${data.participantId}`);
         claim = await tx.get(claimRef);
+        if (typeof data.displayName === 'string') {
+          certificateRef = doc(db, 'typingCertificates', await typingCertificateKey(data.participantId, data.displayName));
+          certificate = await tx.get(certificateRef);
+        }
       }
 
       tx.delete(resultRef);
@@ -970,6 +999,8 @@ export async function deleteTyping(db, id) {
       const releasedParticipation = !!claimData && claimData.kind === 'typingEntry' &&
         claimData.student_number === data.participantId && claimData.result_id === id;
       if (releasedParticipation) tx.delete(claimRef);
+      if (certificate?.exists() && certificate.data().id === id)
+        tx.delete(certificateRef);
       return { id, deleted: true, releasedParticipation };
     }));
   } catch (error) {

@@ -1,5 +1,5 @@
 /** Mutable state shared by the admin entrypoint and feature modules. */
-import { DEFAULT_SESSION_POLICY } from '../db/database.js?v=db-schema-5';
+import { DEFAULT_SESSION_POLICY } from '../db/database.js?v=typing-certificate-1';
 
 export const feature = document.body.dataset.feature;
 export const state = {

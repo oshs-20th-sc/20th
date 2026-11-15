@@ -19,6 +19,7 @@ import {countKeystrokes} from '/typing/scoring.js';
 const text='가나다라마바사아자차카타파하';
 export const readEvent=async()=>({activeChallengeId:'test-only',phase:'A'});
 export const readChallenge=async()=>{const current=window.__longPrompt || text;return {challengeId:'test-only',text:current,title:'타자 문구',referenceKeystrokes:countKeystrokes(current),practice:false}};
+export const readTypingCertificate=async()=>{window.__certificateLookups=(window.__certificateLookups||0)+1;if(window.__certificateLookupError)throw Error('테스트: 기존 기록 조회 실패');if(window.__holdCertificateLookup)return new Promise(resolve=>{window.__releaseCertificateLookup=resolve});return window.__certificate??null};
 export const validateTypingResult=value=>value;
 export const submitTyping=async(db,participant,record)=>{window.__record=record;if(window.__rejectSave){const error=Error('같은 학번의 기존 기록 또는 접수 조건을 확인해 주세요.');error.code='TYPING_REJECTED';throw error}return record};`;
 (async()=>{
@@ -89,6 +90,39 @@ await page.waitForFunction(()=>document.querySelector('#record-save-status').dat
 const failure=await page.locator('#record-save-status').textContent();assert(failure.includes('같은 학번'));assert(failure.includes('기기에 보관'));assert(!failure.includes('저장되었어요'));
 await page.locator('#record-return').click();await page.waitForFunction(()=>document.activeElement.id==='retry');assert(await page.locator('#retry').isVisible());
 await page.screenshot({path:`${out}/save-rejection-desktop.png`,animations:'disabled'});
+// Returning records restore the saved screen without enabling a new attempt.
+const returning=await browser.newPage({viewport:{width:1366,height:768}});
+await returning.route('**/db/firebase.js*',r=>r.fulfill({contentType:'text/javascript',body:firebase}));
+await returning.route('**/db/database.js*',r=>r.fulfill({contentType:'text/javascript',body:database}));
+await returning.goto('http://127.0.0.1:5176/typing/');await returning.locator('#entry-form').waitFor();
+const certificate={id:'00000000-0000-4000-8000-000000000001',participantId:'20101',displayName:'김오성',challengeId:'test-only',elapsedMs:12345,speed:300,errors:2,score:294,completedAt:'2026-11-16T00:00:00.000Z',text:'가나',title:'기존 문구',referenceKeystrokes:4};
+await returning.evaluate(value=>{window.__certificate=value},certificate);
+const enter=async(number='20101',name='김오성')=>{await returning.locator('[name=studentNumber]').fill(number);await returning.locator('[name=name]').fill(name);await returning.locator('#entry-form button').click()};
+await enter();await returning.locator('#record-dialog[open]').waitFor();
+assert.equal(await returning.locator('#record-save-status').textContent(),'기록이 저장됐어요!');
+assert.equal(await returning.locator('#typing-input').isDisabled(),true);
+assert.equal(await returning.locator('#typing-input').inputValue(),'가나');
+assert.equal(await returning.locator('#record-score').textContent(),'294');
+assert.equal(await returning.locator('#record-time').textContent(),'12.35');
+assert.equal(await returning.evaluate(()=>window.__record),undefined);
+const palette=await returning.evaluate(()=>{const status=getComputedStyle(document.querySelector('#record-save-status'));const card=getComputedStyle(document.querySelector('#record-dialog'));return{statusColor:status.color,cardColor:card.color,statusBg:status.backgroundColor,cardBg:card.backgroundColor}});
+assert.equal(palette.statusColor,palette.cardColor);assert.equal(palette.statusBg,palette.cardBg);
+await returning.screenshot({path:out+'/returning-record-desktop.png',animations:'disabled'});
+await returning.keyboard.press('Escape');await returning.waitForFunction(()=>document.activeElement.id==='show-record');
+await returning.locator('#student-logout').click();await returning.locator('#entry-form').waitFor();
+await returning.evaluate(()=>{window.__certificateLookupError=true});await enter();
+await returning.waitForFunction(()=>document.querySelector('#feedback').textContent.includes('조회 실패'));
+assert.equal(await returning.locator('#typing-input').isDisabled(),true);assert(await returning.locator('#reload').isVisible());
+await returning.evaluate(()=>{window.__certificateLookupError=false});await returning.locator('#reload').click();await returning.locator('#record-dialog[open]').waitFor();
+await returning.locator('#record-close').click();await returning.locator('#student-logout').click();
+await returning.evaluate(()=>{window.__holdCertificateLookup=true});await enter();await returning.waitForFunction(()=>!!window.__releaseCertificateLookup);
+await returning.evaluate(()=>window.dispatchEvent(new PageTransitionEvent('pagehide')));
+await returning.locator('#entry-form').waitFor();await returning.evaluate(()=>{window.__holdCertificateLookup=false;window.__certificate=null});await enter('20102','다음참가자');await returning.locator('#typing-input:enabled').waitFor();
+await returning.evaluate(value=>window.__releaseCertificateLookup(value),certificate);
+assert.equal(await returning.locator('#record-dialog').isVisible(),false);
+assert.equal(await returning.locator('#typing-input').isEnabled(),true);
+assert((await returning.locator('#student-name').textContent()).includes('다음참가자'));
+await returning.close();
 // Writing keeps comfortable controls and a generous textarea, without excess sections.
 const writing=await browser.newPage({viewport:{width:1366,height:768}});
 writing.on('pageerror',error=>{throw error});

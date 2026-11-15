@@ -100,6 +100,8 @@ export function validateBackup(input) {
       const validId = input.schemaVersion === SCHEMA_VERSION
         ? collection === 'admins' || collection.startsWith('legacy')
           ? /^[A-Za-z0-9_-]{1,128}$/.test(id)
+          : collection === 'typingCertificates'
+            ? /^[0-9a-f]{64}$/.test(id)
           : collection === 'typingEntries'
             ? /^[1-3][0-9]{4}$/.test(id) || officialClaim.test(id)
             : collection === 'settings'
@@ -217,7 +219,7 @@ export async function restoreBackup(
   if (new Set(records.map(row => row.path)).size !== records.length)
     throw new Error('DUPLICATE_RESTORE_DESTINATION');
   const parentPaths=new Set();
-  if(records.some((row)=>['challenges','typingResults','typingEntries','typingReceipts'].includes(row.kind)))
+  if(records.some((row)=>['challenges','typingResults','typingEntries','typingReceipts','typingCertificates'].includes(row.kind)))
     parentPaths.add(Object.keys(PARENT_DOCUMENTS).find((path)=>path.startsWith('타자대회/')));
   if(records.some((row)=>['letters','publicLetters','letterTrash','letterLogs','letterReceipts'].includes(row.kind)))
     parentPaths.add(Object.keys(PARENT_DOCUMENTS).find((path)=>path.startsWith('글쓰기/')));

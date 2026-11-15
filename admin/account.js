@@ -11,10 +11,10 @@ import {
   serverTimestamp,
   setDoc,
   withDeadline,
-} from '../db/firebase.js?v=db-schema-5';
+} from '../db/firebase.js?v=typing-certificate-1';
 import { escapeHtml as html } from '../common.js';
-import { $, field, run, setStatus, submit } from './shared.js?v=db-schema-5';
-import { state } from './state.js?v=db-schema-5';
+import { $, field, run, setStatus, submit } from './shared.js?v=typing-certificate-1';
+import { state } from './state.js?v=typing-certificate-1';
 
 export async function accountView(db, sequence = state.viewSequence) {
   const roles = await withDeadline(getDocs(collection(db, 'admins')));

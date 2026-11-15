@@ -1,18 +1,18 @@
-import { mountObyeol } from './obyeol.js?v=db-schema-5';
-import { mountRecordCard } from './record-card.js?v=record-copy-1';
-import { getPublicDb, errorMessage } from '../db/firebase.js?v=db-schema-5';
-import { readEvent, readChallenge } from '../db/database.js?v=db-schema-5';
-import { mountLogin } from '../login.js?v=db-schema-5';
-import { downloadFile } from '../common.js?v=db-schema-5';
+import { mountObyeol } from './obyeol.js?v=typing-certificate-1';
+import { mountRecordCard } from './record-card.js?v=typing-certificate-1';
+import { getPublicDb, errorMessage } from '../db/firebase.js?v=typing-certificate-1';
+import { readEvent, readChallenge, readTypingCertificate } from '../db/database.js?v=typing-certificate-1';
+import { mountLogin } from '../login.js?v=typing-certificate-1';
+import { downloadFile } from '../common.js?v=typing-certificate-1';
 import {
   initialInputState,
   commitInput,
   compositionStart,
   compositionEnd,
   isComplete,
-} from './engine.js?v=db-schema-5';
-import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=db-schema-5';
-import { saveResult } from './storage.js?v=db-schema-5';
+} from './engine.js?v=typing-certificate-1';
+import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=typing-certificate-1';
+import { saveResult } from './storage.js?v=typing-certificate-1';
 
 const elements = Object.fromEntries(
   [
@@ -243,7 +243,16 @@ function invalidate(reason) {
 async function prepareAttempt() {
   if (!participant || loading || status !== 'ready') return;
   const version = sessionVersion;
+  loading = true;
+  elements.reload.hidden = true;
+  updateControls();
   try {
+    const previous = await readTypingCertificate(await getPublicDb(), participant);
+    if (version !== sessionVersion) return;
+    if (previous) {
+      showCompletedRecord(previous);
+      return;
+    }
     const current = await refresh();
     if (version !== sessionVersion) return;
     if (current.challenge.deleted) throw new Error('사용할 문구가 삭제되었습니다. 운영진에게 알려 주세요.');
@@ -264,8 +273,41 @@ async function prepareAttempt() {
     message('');
     elements['typing-input'].focus();
   } catch (reason) {
+    if (version !== sessionVersion) return;
+    elements.reload.hidden = false;
     message(errorMessage(reason), true);
+  } finally {
+    if (version === sessionVersion) {
+      loading = false;
+      updateControls();
+    }
   }
+}
+
+function showCompletedRecord(record) {
+  attempt = {challengeId:record.challengeId, title:record.title, text:record.text,
+    referenceKeystrokes:record.referenceKeystrokes, practice:false, errorPenalty:EVENT_ERROR_PENALTY};
+  showChallenge(attempt);
+  elements['typing-input'].value = record.text;
+  highlight(record.text);
+  elapsed = record.elapsedMs;
+  elements.elapsed.textContent = (elapsed / 1000).toFixed(2);
+  elements.errors.textContent = record.errors;
+  elements.score.textContent = record.score;
+  elements.result.textContent = `${record.speed}타/분 · 오타 ${record.errors}회 · ${record.score}점`;
+  elements.result.hidden = false;
+  elements['event-status'].hidden = true;
+  elements.reload.hidden = true;
+  needsBackup = false;
+  filePrepared = false;
+  failureReason = '';
+  participant = null;
+  result = null;
+  obyeol.complete();
+  recordCard.show(record, 'saved');
+  transition('saved');
+  message('저장 완료');
+  login.finish();
 }
 
 const input = elements['typing-input'];
@@ -372,6 +414,7 @@ function clearAttempt() {
   filePrepared = false;
   failureReason = '';
   elapsed = 0;
+  loading = false;
   input.value = '';
   elements.elapsed.textContent = '0.0';
   elements.errors.textContent = '0';

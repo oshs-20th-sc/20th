@@ -10,6 +10,7 @@ export const COLLECTIONS = Object.freeze({
   typingResults: `타자대회/${TYPING_EVENT_ID}/기록`,
   typingEntries: `타자대회/${TYPING_EVENT_ID}/참여제한`,
   typingReceipts: `타자대회/${TYPING_EVENT_ID}/접수확인`,
+  typingCertificates: `타자대회/${TYPING_EVENT_ID}/기록증`,
   letters: `글쓰기/${WRITING_EVENT_ID}/접수글`,
   publicLetters: `글쓰기/${WRITING_EVENT_ID}/공개글`,
   letterTrash: `글쓰기/${WRITING_EVENT_ID}/휴지통`,
@@ -78,6 +79,20 @@ export const FIELDS = Object.freeze({
   result_id: '기록ID',
 });
 const KIND_FIELDS = {
+  typingCertificates: [
+    'id',
+    'participantId',
+    'displayName',
+    'challengeId',
+    'elapsedMs',
+    'speed',
+    'errors',
+    'score',
+    'completedAt',
+    'text',
+    'title',
+    'referenceKeystrokes',
+  ],
   typingResults: [
     'id',
     'owner_uid',

@@ -2,7 +2,7 @@
 // Run with Java 21 and firebase emulators:exec --project demo-ohsung --config db/firebase.json --only auth,firestore.
 // Never points at a production Firebase project.
 const assert = require('node:assert/strict');
-const { randomUUID } = require('node:crypto');
+const { createHash, randomUUID } = require('node:crypto');
 const { chromium } = require('playwright');
 const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
 
@@ -13,6 +13,7 @@ const challengeId = 'schema-flow-desktop';
 const phrase = '가';
 const targetStudent = '20103';
 const targetName = '통합검증';
+const certificateKey=(studentNumber,name)=>createHash('sha256').update(studentNumber+String.fromCharCode(10)+name.trim().normalize('NFKC').normalize('NFC')).digest('hex');
 
 (async()=>{
 const testEnv = await initializeTestEnvironment({projectId,firestore:{host:'127.0.0.1',port:8088}});
@@ -67,11 +68,17 @@ async function openPage(path) {
   await page.goto(`${baseUrl}${path}`);
   return page;
 }
-async function studentPage(studentNumber=targetStudent,name=targetName) {
+async function loginStudent(studentNumber=targetStudent,name=targetName) {
   const page=await openPage('/typing/?emulator=1');
   await page.locator('[name=studentNumber]').fill(studentNumber);
   await page.locator('[name=name]').fill(name);
   await page.locator('#entry-form button[type=submit]').click();
+  await page.waitForFunction(()=>!document.querySelector('#typing-input').disabled ||
+    document.querySelector('#record-dialog').open || !document.querySelector('#reload').hidden);
+  return page;
+}
+async function studentPage(studentNumber=targetStudent,name=targetName) {
+  const page=await loginStudent(studentNumber,name);
   await page.locator('#typing-input:enabled').waitFor();
   return page;
 }
@@ -90,10 +97,11 @@ async function signInAdmin(page,admin) {
   await page.locator('#view').waitFor();
 }
 async function verifyTypingResult(recordId,student=targetStudent,name=targetName) {
-  const [result,receipt,claim]=await Promise.all([
+  const [result,receipt,claim,certificate]=await Promise.all([
     raw(`타자대회/${eventId}/기록/${recordId}`),
     raw(`타자대회/${eventId}/접수확인/${recordId}`),
     raw(`타자대회/${eventId}/참여제한/${student}`),
+    raw(`타자대회/${eventId}/기록증/${certificateKey(student,name)}`),
   ]);
   assert(result.exists,'typing result should be stored at the event-scoped path');
   assert.equal(result.data['학번'],student);
@@ -105,6 +113,17 @@ async function verifyTypingResult(recordId,student=targetStudent,name=targetName
   assert.equal(receipt.data['접수종류'],'typing');
   assert(claim.exists,'the participation constraint is in its own collection');
   assert.equal(claim.data['기록ID'],recordId);
+  assert(certificate.exists,'the reusable, minimal typing certificate is stored separately');
+  assert.equal(certificate.data['학번'],student);
+  assert.equal(certificate.data['이름'],name);
+  assert.equal(certificate.data['문구본문'],phrase);
+  assert.equal(certificate.data['문구ID'],challengeId);
+  assert.equal(certificate.data['문서ID'],recordId);
+  assert.equal(certificate.data['최종점수'],result.data['최종점수']);
+  assert.equal(certificate.data['분당타수'],result.data['분당타수']);
+  assert.equal(certificate.data['누적오타'],result.data['누적오타']);
+  assert.equal(certificate.data['소요시간밀리초'],result.data['소요시간밀리초']);
+  return {result:result.data,certificate:certificate.data};
 }
 
 try {
@@ -124,6 +143,9 @@ try {
   await deniedAdmin.close();
 
   const first=await studentPage();
+  // Both clients pass the certificate lookup before either has submitted, preserving
+  // the real duplicate-submission race and the existing backup/retry behavior.
+  const duplicate=await studentPage();
   assert.equal(await typeAndWait(first),'saved','first record submission through the page must succeed');
   const resultRows=await unsafe(async db=>{
     const collection=db.collection(`타자대회/${eventId}/기록`);
@@ -132,11 +154,11 @@ try {
   });
   assert.equal(resultRows.length,1,'one complete record must create exactly one result');
   const recordId=resultRows[0].id;
-  await verifyTypingResult(recordId);
+  const savedCertificate=await verifyTypingResult(recordId);
   await first.close();
 
-  // A second device is denied by the one-time claim and keeps its record in the browser backup.
-  const duplicate=await studentPage();
+  // The second client already looked up an empty certificate; its in-flight attempt is
+  // still rejected by the atomic participation claim and must remain locally recoverable.
   assert.equal(await typeAndWait(duplicate),'failed','duplicate official entry must be rejected');
   assert.match(await duplicate.locator('#record-save-status').innerText(),/이미 있|확인|거부/);
   const localPending=await duplicate.evaluate(async()=>{
@@ -146,6 +168,51 @@ try {
   });
   assert.equal(localPending.length,1,'failed result must remain in the existing IndexedDB backup');
   await duplicate.close();
+
+  // A later visit finds the saved certificate and opens the exact result read-only.
+  const returning=await loginStudent();
+  await returning.locator('#record-dialog[open]').waitFor();
+  assert.equal(await returning.locator('#typing-input').isDisabled(),true);
+  assert.equal(await returning.locator('#typing-input').inputValue(),phrase);
+  assert.equal(await returning.locator('#record-save-status').getAttribute('data-state'),'saved');
+  assert.equal(await returning.locator('#record-save-status').innerText(),'기록이 저장됐어요!');
+  assert.equal(await returning.locator('#obyeol').getAttribute('data-mood'),'complete');
+  const replayMetrics=await returning.locator('#record-dialog').evaluate(dialog=>Object.fromEntries(
+    ['student','name','score','speed','errors','time'].map(field=>[field,document.getElementById(`record-${field}`).textContent])
+  ));
+  assert.deepEqual(replayMetrics,{student:targetStudent,name:targetName,
+    score:String(savedCertificate.certificate['최종점수']),
+    speed:String(savedCertificate.certificate['분당타수']),
+    errors:String(savedCertificate.certificate['누적오타']),
+    time:(savedCertificate.certificate['소요시간밀리초']/1000).toFixed(2)});
+  const savedStatusStyle=await returning.locator('#record-save-status').evaluate(element=>({
+    color:getComputedStyle(element).color,
+    cardColor:getComputedStyle(document.querySelector('.record-card')).color,
+    background:getComputedStyle(element).backgroundColor,
+    cardBackground:getComputedStyle(document.querySelector('#record-dialog')).backgroundColor,
+  }));
+  assert.equal(savedStatusStyle.color,savedStatusStyle.cardColor,'saved status stays neutral');
+  assert.equal(savedStatusStyle.background,savedStatusStyle.cardBackground,'saved status uses the card palette');
+  assert.equal(await returning.locator('#student-logout').innerText(),'다음 참가자');
+  await returning.keyboard.press('Escape');
+  await returning.waitForFunction(()=>!document.querySelector('#record-dialog').open);
+  await returning.locator('#show-record').click();
+  await returning.locator('#record-dialog[open]').waitFor();
+  await returning.locator('#record-close').click();
+  await returning.locator('#student-logout').click();
+  await returning.locator('#entry-form').waitFor();
+  await returning.locator('[name=studentNumber]').fill('20105');
+  await returning.locator('[name=name]').fill('둘째검증');
+  await returning.locator('#entry-form button[type=submit]').click();
+  await returning.locator('#typing-input:enabled').waitFor();
+  const afterReplay=await unsafe(async db=>{
+    const results=await db.collection(`타자대회/${eventId}/기록`).where('학번','==',targetStudent).get();
+    const receipts=await db.collection(`타자대회/${eventId}/접수확인`).where('학번','==',targetStudent).get();
+    return {results:results.size, certificate:(await db.doc(`타자대회/${eventId}/기록증/${certificateKey(targetStudent,targetName)}`).get()).data()};
+  });
+  assert.equal(afterReplay.results,1,'reopening a saved certificate never creates another result');
+  assert.deepEqual(afterReplay.certificate,savedCertificate.certificate);
+  await returning.close();
 
   // Remove the first test result in the actual admin UI; the coupled participation key must go too.
   const typingAdmin=await openPage('/typing/admin/?emulator=1');
@@ -157,6 +224,7 @@ try {
   assert.equal((await raw(`타자대회/${eventId}/기록/${recordId}`)).exists,false);
   assert.equal((await raw(`타자대회/${eventId}/접수확인/${recordId}`)).exists,false);
   assert.equal((await raw(`타자대회/${eventId}/참여제한/${targetStudent}`)).exists,false);
+  assert.equal((await raw(`타자대회/${eventId}/기록증/${certificateKey(targetStudent,targetName)}`)).exists,false);
   await typingAdmin.close();
 
   const reentry=await studentPage();
@@ -179,8 +247,8 @@ try {
   const typingQueryPage=await openPage('/typing/admin/?emulator=1');
   await signInAdmin(typingQueryPage,admin);
   const typingPages=await typingQueryPage.evaluate(async(challengeId)=>{
-    const database=await import('/db/database.js?v=db-schema-5');
-    const firebase=await import('/db/firebase.js?v=db-schema-5');
+    const database=await import('/db/database.js?v=typing-certificate-1');
+    const firebase=await import('/db/firebase.js?v=typing-certificate-1');
     const {db}=await firebase.adminContext();
     const first=await database.readTypingPage(db,{version:challengeId,pageSize:1});
     const second=await database.readTypingPage(db,{version:challengeId,pageSize:1,cursor:first.cursor});
@@ -226,8 +294,8 @@ try {
   const writingAdmin=await openPage('/write/admin/?emulator=1');
   await signInAdmin(writingAdmin,admin);
   const letterPages=await writingAdmin.evaluate(async()=>{
-    const database=await import('/db/database.js?v=db-schema-5');
-    const firebase=await import('/db/firebase.js?v=db-schema-5');
+    const database=await import('/db/database.js?v=typing-certificate-1');
+    const firebase=await import('/db/firebase.js?v=typing-certificate-1');
     const {db}=await firebase.adminContext();
     const first=await database.readLettersPage(db,{status:'pending',pageSize:1});
     const second=await database.readLettersPage(db,{status:'pending',pageSize:1,cursor:first.cursor});
@@ -251,8 +319,8 @@ try {
   await writingAdmin.waitForFunction(()=>document.querySelector('#status')?.textContent.includes('휴지통으로 이동 완료'));
   assert((await raw(`글쓰기/기본/휴지통/${letterId}`)).exists,'trash action preserves the original in the writing archive');
   const trashPage=await writingAdmin.evaluate(async(letterId)=>{
-    const database=await import('/db/database.js?v=db-schema-5');
-    const firebase=await import('/db/firebase.js?v=db-schema-5');
+    const database=await import('/db/database.js?v=typing-certificate-1');
+    const firebase=await import('/db/firebase.js?v=typing-certificate-1');
     const {db}=await firebase.adminContext();
     const page=await database.readLettersPage(db,{trash:true,status:'approved',pageSize:10});
     const history=await database.readLetterHistory(db,letterId);
@@ -277,8 +345,8 @@ try {
   const backupPage=await openPage('/typing/admin/?emulator=1');
   await signInAdmin(backupPage,admin);
   const backup=await backupPage.evaluate(async()=>{
-    const database=await import('/db/database.js?v=db-schema-5');
-    const firebase=await import('/db/firebase.js?v=db-schema-5');
+    const database=await import('/db/database.js?v=typing-certificate-1');
+    const firebase=await import('/db/firebase.js?v=typing-certificate-1');
     const context=await firebase.adminContext();
     return database.createPrivateBackup(context.db);
   });

@@ -61,13 +61,53 @@ service cloud.firestore {
         && get(path).data['접수종류'] == 'typingEntry'
         && get(path).data['학번'] == number && get(path).data['기록ID'] == id;
     }
+
+    function certificateHash(number, name) { return hashing.sha256(number + '\n' + name).toHexString().lower(); }
+    function certificatePath(key) { return path('databases/' + database + '/documents/타자대회/2026-11-23/기록증/' + key); }
+    function certificateKey(data) { return certificateHash(data.get('학번', ''), data.get('이름', '')); }
+    function certificateReadable(key, data) {
+      let fields = ['문서ID', '학번', '이름', '문구ID', '소요시간밀리초', '분당타수', '누적오타', '최종점수', '완료시각', '문구본문', '문구제목', '기준타수'];
+      return key.matches('[0-9a-f]{64}') && data.keys().hasAll(fields) && data.keys().hasOnly(fields)
+        && uuid(data['문서ID']) && participantNumber(data['학번']) && participantName(data['이름'])
+        && key == certificateHash(data['학번'], data['이름'])
+        && text(data['문구ID'], 1, 100) && data['문구ID'].matches('[a-zA-Z0-9_-]+')
+        && data['소요시간밀리초'] is number && data['소요시간밀리초'] > 0 && data['소요시간밀리초'] <= 3600000
+        && data['분당타수'] is int && data['분당타수'] >= 0
+        && data['누적오타'] is int && data['누적오타'] >= 0 && data['누적오타'] <= 10000
+        && data['최종점수'] is int && data['최종점수'] >= 0
+        && data['완료시각'] is string && data['완료시각'].size() <= 30
+        && data['문구본문'] is string && data['문구본문'].size() <= 1000
+        && text(data['문구제목'], 1, 100)
+        && data['기준타수'] is int && data['기준타수'] >= 0 && data['기준타수'] <= 5000;
+    }
+    function certificateCreate(key, data) {
+      let sourcePath = resultPath(data.get('문서ID', ''));
+      let source = getAfter(sourcePath).data;
+      let challengePath = path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data.get('문구ID', ''));
+      let challenge = exists(challengePath) ? get(challengePath).data : {};
+      return certificateReadable(key, data) && (admin() || !signedIn())
+        && source.get('참가방식', '') == 'record' && source['연습여부'] == false
+        && (source['접수시각'] == request.time || (admin() && exists(sourcePath)))
+        && getAfter(typingEntryPath(source['학번'])).data['기록ID'] == source['문서ID']
+        && data['문서ID'] == source['문서ID'] && data['학번'] == source['학번'] && data['이름'] == source['이름']
+        && data['문구ID'] == source['문구ID'] && data['소요시간밀리초'] == source['소요시간밀리초']
+        && data['분당타수'] == source['분당타수'] && data['누적오타'] == source['누적오타']
+        && data['최종점수'] == source['최종점수'] && data['완료시각'] == source['완료시각']
+        && data['문구본문'] == challenge.get('문구본문', '') && data['기준타수'] == challenge.get('기준타수', 0)
+        && data['문구제목'] == challenge.get('문구제목', data['문구제목']);
+    }
+    function exactCertificate(id, data) {
+      let cp = certificatePath(certificateKey(data));
+      return data.get('참가방식', '') == 'record' && exists(cp) && get(cp).data['문서ID'] == id;
+    }
     function typingResultDeleteReady(id, data) {
       let receipt = typingReceiptPath(id);
       let entry = typingEntryPath(participant(data));
       return data.get('참가방식', '') != 'record'
         ? (!exists(receipt) || get(receipt).data.get('접수종류', '') != 'typing' || !existsAfter(receipt))
         : (!existsAfter(receipt)
-          && (data.get('연습여부', false) || !exactTypingEntry(id, data) || !existsAfter(entry)));
+          && (data.get('연습여부', false) || !exactTypingEntry(id, data) || !existsAfter(entry))
+          && (!exactCertificate(id, data) || !existsAfter(certificatePath(certificateKey(data)))));
     }
     function typingReceiptDeleteReady(id, data) {
       return uuid(id) && data['접수종류'] == 'typing'
@@ -490,6 +530,16 @@ service cloud.firestore {
       function inTarget() { return root == '보관자료' && eventId == '이전자료' && subcollection == '학생명부'; } allow read: if inTarget() && (admin()); allow write: if inTarget() && (false); }
     match /{root}/{eventId}/{subcollection}/{id} {
       function inTarget() { return root == '보관자료' && eventId == '이전자료' && subcollection == '학생제재이력'; } allow read: if inTarget() && (admin()); allow write: if inTarget() && (false); }
+
+    match /{root}/{eventId}/{subcollection}/{key} {
+      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '기록증'; }
+      allow get: if inTarget() && (admin() || (key.matches('[0-9a-f]{64}')
+        && (!exists(certificatePath(key)) || certificateReadable(key, resource.data))));
+      allow list: if inTarget() && admin();
+      allow create: if inTarget() && certificateCreate(key, request.resource.data);
+      allow update: if false;
+      allow delete: if inTarget() && admin() && !existsAfter(resultPath(resource.data['문서ID']));
+    }
     match /{document=**} { allow read, write: if false; }
   }
 }
