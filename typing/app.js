@@ -1,5 +1,5 @@
 import { mountObyeol } from './obyeol.js?v=db-schema-5';
-import { mountRecordCard } from './record-card.js?v=db-schema-5';
+import { mountRecordCard } from './record-card.js?v=record-copy-1';
 import { getPublicDb, errorMessage } from '../db/firebase.js?v=db-schema-5';
 import { readEvent, readChallenge } from '../db/database.js?v=db-schema-5';
 import { mountLogin } from '../login.js?v=db-schema-5';

@@ -63,7 +63,7 @@ export function mountRecordCard() {
       saveStatus.dataset.state = next;
       saveStatus.textContent = {
         saving: '서버에 기록을 저장하고 있어요.',
-        saved: '서버에 기록이 저장되었어요. 운영진 확인을 기다려 주세요.',
+        saved: '기록이 저장됐어요!',
         failed: needsBackup
           ? '서버 저장과 기기 보관에 실패했어요. 기록 화면에서 파일로 저장해 주세요.'
           : filePrepared
