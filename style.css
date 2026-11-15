@@ -114,10 +114,12 @@ small, .muted { color: var(--muted); }
 /* Inputs and shared panels */
 .panel { background: var(--white); border: 1.5px solid var(--ink); border-radius: 18px; padding: 25px 29px; margin: 17px 0; box-shadow: 0 4px 0 rgba(66,46,23,.1); }
 label { font-weight: 750; display: block; margin: 17px 0 7px; font-size: 13px; color: var(--text); }
-input, textarea, select { width: 100%; border: 1.5px solid #b9afa1; border-radius: 10px; padding: 11px 13px; min-height: 47px; font-size: 14px; background: white; color: var(--ink); }
+input:not([type='checkbox']):not([type='radio']), textarea, select { width: 100%; border: 1.5px solid #b9afa1; border-radius: 10px; padding: 11px 13px; min-height: 47px; font-size: 14px; background: white; color: var(--ink); }
+input[type='checkbox'], input[type='radio'] { width: 18px; height: 18px; min-width: 18px; min-height: 18px; padding: 0; margin: 0; flex: 0 0 18px; vertical-align: middle; accent-color: #a16e2e; cursor: pointer; }
+input[type='checkbox']:focus-visible, input[type='radio']:focus-visible { outline: 2px solid var(--ink); outline-offset: 3px; }
 input::placeholder, textarea::placeholder { color: #9c968e; }
 textarea { line-height: 1.8; resize: vertical; }
-input:focus, textarea:focus, select:focus { border-color: #af7a32; outline: 3px solid #ffe5ae; outline-offset: 0; }
+input:not([type='checkbox']):not([type='radio']):focus, textarea:focus, select:focus { border-color: #af7a32; outline: 3px solid #ffe5ae; outline-offset: 0; }
 button { border: 1.5px solid var(--ink); border-radius: 9px; color: var(--ink); font-size: 13px; font-weight: 750; min-height: 43px; padding: 9px 16px; background: #fffaf0; transition: background .12s, transform .12s; }
 button:hover:enabled { background: #ffedbd; }
 button:active:enabled { transform: translateY(1px); }
@@ -131,7 +133,6 @@ button.danger { color: var(--danger); }
 .actions, .toolbar, .admin-nav { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 17px 0; }
 .form-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 15px; }
 .checkbox { display: flex; align-items: center; gap: 10px; }
-.checkbox input { width: auto; min-height: 0; margin: 0; accent-color: #a16e2e; }
 .error { border: 1px solid #daa5a2; border-radius: 9px; color: #902e35; background: #fff0ee; padding: 12px 14px; }
 .notice { border-left: 3px solid #d3a34b; border-radius: 7px; padding: 12px 14px; background: #fff1ce; }
 #event-status:not([hidden]), #status:not([hidden]) { margin: 12px 0; border: 1px solid #e7d8b4; border-radius: 9px; padding: 10px 13px; background: #fff3d5; color: #65543b; font-size: 13px; }

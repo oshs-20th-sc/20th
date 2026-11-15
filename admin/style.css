@@ -106,8 +106,8 @@
 #admin .panel h2 { margin-bottom: 14px; font-size: 19px; }
 #admin .panel h3 { margin-top: 18px; font-size: 15px; }
 #admin label { min-width: 0; font-size: 13px; }
-#admin input, #admin textarea, #admin select { min-width: 0; border-color: #c8bcaa; border-radius: 9px; }
-#admin input:focus, #admin textarea:focus, #admin select:focus { border-color: #ae7931; outline-color: #ffe7b3; }
+#admin input:not([type='checkbox']):not([type='radio']), #admin textarea, #admin select { min-width: 0; border-color: #c8bcaa; border-radius: 9px; }
+#admin input:not([type='checkbox']):not([type='radio']):focus, #admin textarea:focus, #admin select:focus { border-color: #ae7931; outline-color: #ffe7b3; }
 #admin button { min-height: 38px; padding: 7px 13px; border-radius: 9px; font-size: 13px; }
 #admin button.danger { color: #9c3035; }
 #admin .toolbar {
