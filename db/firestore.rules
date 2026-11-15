@@ -1,455 +1,495 @@
-// Models: admins/{uid}: enabled + optional email (254), created_at; no self role writes.
-// settings/event: phase A/B/C, updated_at, optional independent switches and activeChallengeId.
-// challenges/{id}: text (1000), referenceKeystrokes (1..5000), practice/enabled,
-// optional title/deleted/errorPenalty (integer 0..100, missing value for new validation: 3).
-// letters/{UUID}: legacy UID rows or E-mode private original + public edit/status/order; student identity is never projected.
-// publicLetters/{UUID}: id, nickname, content, order, sort_order; sanitized approved projection only.
-// typingResults/{UUID}: legacy UID rows or E-mode private school number/name, score, verification and prize state.
-// receipts/{UUID}: typing/letter receipt metadata; official-20261123-{school5} are private one-time claims released only with their deleted result.
-// settings/sessionPolicy: boothMode bool, idleMinutes int(1..120), updated_at.
-// letterTrash/{UUID}: private original letter snapshot, trashed_at/by, last_history_id UUID.
-// letterLogs/{UUID[-restore|-purge]}: letter_id, operator_uid, action, before/after snapshots,
-// created_at; immutable and admin-only. Live letters may carry last_history_id.
+// Persisted schema v5: Korean field names and event-scoped paths are defined in db/schema.js.
+// Private originals: 타자대회/2026-11-23/기록, 글쓰기/기본/접수글.
+// Public projection: 글쓰기/기본/공개글. Receipt hashes and participation claims are separate.
+// Letter snapshots and immutable audit history remain private to enabled admins.
 rules_version = '2';
 service cloud.firestore {
   match /databases/{database}/documents {
     function signedIn() { return request.auth != null; }
     function admin() {
-      return signedIn() && exists(/databases/$(database)/documents/admins/$(request.auth.uid))
-        && get(/databases/$(database)/documents/admins/$(request.auth.uid)).data.enabled == true;
+      return signedIn()
+        && exists(path('databases/' + database + '/documents/관리자/' + request.auth.uid))
+        && get(path('databases/' + database + '/documents/관리자/' + request.auth.uid)).data.get('사용여부', false) == true;
     }
     function studentUid(value) {
       return value is string && (value.matches('[A-Za-z0-9_-]{20}') || value.matches('[0-9]{7}'));
     }
     function uuid(value) { return value is string && value.matches('[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}'); }
+    function participantNumber(value) { return value is string && value.matches('[1-3][0-9]{4}'); }
+    function participant(data) {
+      return data.get('참가방식', '') == 'record'
+        ? data.get('학번', '') : data.get('이전참가자ID', '');
+    }
+    function participantName(value) { return text(value, 1, 30) && !value.matches('(?s).*\\n.*'); }
     function writingOpen() {
-      let data = get(/databases/$(database)/documents/settings/event).data;
-      return data.phase == 'A' && data.get('submissionsEnabled', true);
-    }
-    function currentChallenge(data) {
-      let event = get(/databases/$(database)/documents/settings/event).data;
-      return data.challengeId == event.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0')
-        && get(/databases/$(database)/documents/challenges/$(data.challengeId)).data.get('deleted', false) == false;
-    }
-    function participantNumber(value) {
-      return value is string && value.matches('[1-3][0-9]{4}');
-    }
-    function participantName(value) {
-      return text(value, 1, 30) && !value.matches('(?s).*\\n.*');
-    }
-    function recordLetterContent(value) {
-      // The browser and Rules use the same UTF-8 byte ceiling, not a character count.
-      return value is string && value.toUtf8().size() > 0 && value.toUtf8().size() <= 131072
-        && value.trim() == value;
-    }
-    function recordReceipt(id, kind) {
-      let receipt = getAfter(/databases/$(database)/documents/receipts/$(id)).data;
-      let target = kind == 'letter'
-        ? getAfter(/databases/$(database)/documents/letters/$(id)).data
-        : getAfter(/databases/$(database)/documents/typingResults/$(id)).data;
-      let targetTimestamp = kind == 'letter' ? target.created_at : target.received_at;
-      return receipt.id == id && receipt.entry_mode == 'record' && receipt.owner_uid == null
-        && receipt.kind == kind && receipt.created_at == request.time
-        && receipt.payload_hash is string && receipt.payload_hash.matches('[0-9a-f]{64}')
-        && target.entry_mode == 'record' && target.owner_uid == null && targetTimestamp == request.time;
-    }
-    function officialClaimId(number) { return 'official-20261123-' + number; }
-    function exactOfficialClaim(id, data) {
-      let number = data.get('participantId', '');
-      let path = /databases/$(database)/documents/receipts/$(officialClaimId(number));
-      return participantNumber(number) && exists(path)
-        && get(path).data.kind == 'typingEntry'
-        && get(path).data.student_number == number
-        && get(path).data.result_id == id;
-    }
-    function typingResultDeleteReady(id, data) {
-      let receiptPath = /databases/$(database)/documents/receipts/$(id);
-      let claimPath = /databases/$(database)/documents/receipts/$(officialClaimId(data.get('participantId', '')));
-      return data.get('entry_mode', '') != 'record'
-        ? (!exists(receiptPath) || get(receiptPath).data.get('kind', '') != 'typing' || !existsAfter(receiptPath))
-        : (!existsAfter(receiptPath)
-          && (data.get('practice', false) || !exactOfficialClaim(id, data) || !existsAfter(claimPath)));
-    }
-    function typingReceiptDeleteReady(id, data) {
-      return uuid(id) && data.kind == 'typing'
-        && !existsAfter(/databases/$(database)/documents/typingResults/$(id));
-    }
-    function officialClaimDeleteReady(id, data) {
-      let resultPath = /databases/$(database)/documents/typingResults/$(data.get('result_id', id));
-      let receiptPath = /databases/$(database)/documents/receipts/$(data.get('result_id', id));
-      return participantNumber(data.get('student_number', ''))
-        && id == officialClaimId(data.student_number) && data.kind == 'typingEntry'
-        && uuid(data.get('result_id', ''))
-        && !existsAfter(resultPath) && !existsAfter(receiptPath);
-    }
-    function officialClaimReady(id, data) {
-      let path = /databases/$(database)/documents/receipts/$(officialClaimId(data.participantId));
-      let claim = getAfter(path).data;
-      return claim.kind == 'typingEntry' && claim.student_number == data.participantId
-        && (claim.result_id == id || (admin() && data.get('duplicate_of', '') == claim.result_id));
-    }
-    function validOfficialClaim(id, data, adminRecovery) {
-      let resultPath = /databases/$(database)/documents/typingResults/$(data.result_id);
-      let result = getAfter(resultPath).data;
-      return id == officialClaimId(data.student_number) && data.kind == 'typingEntry'
-        && data.keys().hasAll(['kind', 'result_id', 'student_number', 'created_at'])
-        && data.keys().hasOnly(['kind', 'result_id', 'student_number', 'created_at'])
-        && uuid(data.result_id) && participantNumber(data.student_number)
-        && data.created_at == request.time && result.entry_mode == 'record'
-        && result.owner_uid == null && result.practice == false
-        && result.participantId == data.student_number && result.received_at is timestamp
-        && (result.received_at == request.time || (adminRecovery && admin()
-          && exists(resultPath) && get(resultPath).data.entry_mode == 'record'));
+      let data = get(path('databases/' + database + '/documents/운영설정/행사')).data;
+      return data['운영단계'] == 'A' && data.get('글접수허용', true);
     }
     function welcomeOpen() {
-      let data = get(/databases/$(database)/documents/settings/event).data;
-      return data.get('welcomeEnabled', data.phase == 'C');
+      let data = get(path('databases/' + database + '/documents/운영설정/행사')).data;
+      return data.get('공개글열람허용', data.get('운영단계', '') == 'C');
+    }
+    function currentChallenge(data) {
+      let event = get(path('databases/' + database + '/documents/운영설정/행사')).data;
+      let challengeId = data.get('문구ID', '');
+      let path = path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + challengeId + '');
+      return challengeId == event.get('선택문구ID', 'aegukga-verse1-practice-v1-floor0')
+        && exists(path) && get(path).data.get('삭제여부', false) == false;
+    }
+    function recordReceipt(id, kind) {
+      let letterReceiptPath = path('databases/' + database + '/documents/글쓰기/기본/접수확인/' + id + '');
+      let typingReceiptPath = path('databases/' + database + '/documents/타자대회/2026-11-23/접수확인/' + id + '');
+      let receipt = kind == 'letter' ? getAfter(letterReceiptPath).data : getAfter(typingReceiptPath).data;
+      let letterPath = path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + '');
+      let resultPath = path('databases/' + database + '/documents/타자대회/2026-11-23/기록/' + id + '');
+      let target = kind == 'letter' ? getAfter(letterPath).data : getAfter(resultPath).data;
+      let targetTimestamp = kind == 'letter' ? target['생성시각'] : target['접수시각'];
+      return receipt['문서ID'] == id && receipt['참가방식'] == 'record'
+        && receipt['이전계정UID'] == null && receipt['접수종류'] == kind
+        && receipt['생성시각'] == request.time && receipt['내용해시'] is string
+        && receipt['내용해시'].matches('[0-9a-f]{64}')
+        && target['참가방식'] == 'record' && target['이전계정UID'] == null
+        && targetTimestamp == request.time;
+    }
+    function typingReceiptPath(id) { return path('databases/' + database + '/documents/타자대회/2026-11-23/접수확인/' + id + ''); }
+    function typingEntryPath(number) { return path('databases/' + database + '/documents/타자대회/2026-11-23/참여제한/' + number + ''); }
+    function resultPath(id) { return path('databases/' + database + '/documents/타자대회/2026-11-23/기록/' + id + ''); }
+    function exactTypingEntry(id, data) {
+      let number = participant(data);
+      let path = typingEntryPath(number);
+      return participantNumber(number) && exists(path)
+        && get(path).data['접수종류'] == 'typingEntry'
+        && get(path).data['학번'] == number && get(path).data['기록ID'] == id;
+    }
+    function typingResultDeleteReady(id, data) {
+      let receipt = typingReceiptPath(id);
+      let entry = typingEntryPath(participant(data));
+      return data.get('참가방식', '') != 'record'
+        ? (!exists(receipt) || get(receipt).data.get('접수종류', '') != 'typing' || !existsAfter(receipt))
+        : (!existsAfter(receipt)
+          && (data.get('연습여부', false) || !exactTypingEntry(id, data) || !existsAfter(entry)));
+    }
+    function typingReceiptDeleteReady(id, data) {
+      return uuid(id) && data['접수종류'] == 'typing'
+        && !existsAfter(resultPath(id));
+    }
+    function typingEntryDeleteReady(id, data) {
+      let result = resultPath(data.get('기록ID', id));
+      let receipt = typingReceiptPath(data.get('기록ID', id));
+      return participantNumber(data.get('학번', '')) && id == data['학번']
+        && data['접수종류'] == 'typingEntry' && uuid(data.get('기록ID', ''))
+        && !existsAfter(result) && !existsAfter(receipt);
+    }
+    function officialClaimReady(id, data) {
+      let path = typingEntryPath(participant(data));
+      let entry = getAfter(path).data;
+      return entry['접수종류'] == 'typingEntry' && entry['학번'] == participant(data)
+        && (entry['기록ID'] == id || (admin() && data.get('원본기록ID', '') == entry['기록ID']));
+    }
+    function validTypingEntry(id, data, adminRecovery) {
+      let path = resultPath(data.get('기록ID', ''));
+      let result = getAfter(path).data;
+      return id == data.get('학번', '') && data.keys().hasAll(['접수종류', '기록ID', '학번', '생성시각'])
+        && data.keys().hasOnly(['접수종류', '기록ID', '학번', '생성시각'])
+        && data['접수종류'] == 'typingEntry' && uuid(data['기록ID'])
+        && participantNumber(data['학번']) && data['생성시각'] == request.time
+        && result.get('참가방식', '') == 'record' && result['이전계정UID'] == null
+        && result.get('연습여부', true) == false && participant(result) == data['학번']
+        && result['접수시각'] is timestamp
+        && (result['접수시각'] == request.time || (adminRecovery && admin()
+          && exists(path) && result['참가방식'] == 'record'));
     }
     function newReceipt(id, kind) {
-      let receipt = getAfter(/databases/$(database)/documents/receipts/$(id)).data;
-      return receipt.id == id && receipt.kind == kind && receipt.created_at == request.time
-        && (receipt.owner_uid == request.auth.uid || (kind == 'typing' && recoveryOwner(getAfter(/databases/$(database)/documents/typingResults/$(id)).data)
-          && receipt.owner_uid == getAfter(/databases/$(database)/documents/typingResults/$(id)).data.owner_uid));
+      let letterPath = path('databases/' + database + '/documents/글쓰기/기본/접수확인/' + id + '');
+      let typingPath = typingReceiptPath(id);
+      let receipt = kind == 'letter' ? getAfter(letterPath).data : getAfter(typingPath).data;
+      let result = getAfter(resultPath(id)).data;
+      return receipt['문서ID'] == id && receipt['접수종류'] == kind
+        && receipt['생성시각'] == request.time
+        && (receipt.get('이전계정UID', null) == request.auth.uid
+          || (kind == 'typing' && recoveryOwner(result)
+            && receipt.get('이전계정UID', null) == result['이전계정UID']));
     }
     function recoveryOwner(data) {
-      return admin() && studentUid(data.owner_uid)
-        && data.participantId == data.owner_uid;
+      return admin() && studentUid(data.get('이전계정UID', ''))
+        && participant(data) == data['이전계정UID'];
     }
     function text(value, minimum, maximum) {
-      // RE2 counts Unicode code points, matching the form's Array.from counter.
       return value is string && value.matches('(?s).{' + string(minimum) + ',' + string(maximum) + '}')
         && value.trim() == value;
     }
-
-    match /settings/sessionPolicy {
-      function valid(data) {
-        return data.keys().hasAll(['boothMode', 'idleMinutes', 'updated_at'])
-          && data.keys().hasOnly(['boothMode', 'idleMinutes', 'academicYear', 'updated_at'])
-          && data.boothMode is bool && data.idleMinutes is int && data.idleMinutes >= 1 && data.idleMinutes <= 120
-          && (!('academicYear' in data) || (data.academicYear is int && data.academicYear >= 2020 && data.academicYear <= 2100))
-          && data.updated_at == request.time;
-      }
-      allow get: if true;
-      allow create, update: if admin() && valid(request.resource.data);
-      allow list, delete: if false;
+    function eventValid(data) {
+      return data.keys().hasAll(['운영단계', '수정시각'])
+        && data.keys().hasOnly(['운영단계', '수정시각', '타자접수허용', '글접수허용', '공개글열람허용', '선택문구ID'])
+        && data['운영단계'] in ['A', 'B', 'C'] && data['수정시각'] == request.time
+        && data.get('타자접수허용', true) is bool && data.get('글접수허용', true) is bool
+        && data.get('공개글열람허용', false) is bool
+        && (!('선택문구ID' in data) || (text(data['선택문구ID'], 1, 100)
+          && getAfter(path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data['선택문구ID'] + '')).data['사용여부'] == true
+          && getAfter(path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data['선택문구ID'] + '')).data.get('삭제여부', false) == false));
     }
-
-    match /admins/{uid} {
-      function valid(data) {
-        return data.keys().hasAll(['enabled', 'email', 'created_at'])
-          && data.keys().hasOnly(['enabled', 'email', 'created_at']) && data.enabled == true
-          && text(data.email, 3, 254) && data.created_at is timestamp;
-      }
-      allow get: if signedIn() && (request.auth.uid == uid || admin());
-      allow list: if admin();
-      allow create: if admin() && request.auth.uid != uid && valid(request.resource.data) && request.resource.data.created_at == request.time;
-      allow update: if false;
-      allow delete: if admin() && request.auth.uid != uid;
+    function challengeValid(id, data) {
+      return id.matches('[a-zA-Z0-9_-]{1,100}')
+        && data.keys().hasAll(['문구본문', '기준타수', '연습여부', '사용여부'])
+        && data.keys().hasOnly(['문구본문', '기준타수', '연습여부', '사용여부', '문구제목', '삭제여부', '오타감점'])
+        && text(data['문구본문'], 1, 1000) && data['기준타수'] is int && data['기준타수'] > 0
+        && data['기준타수'] <= 5000 && data['연습여부'] is bool && data['사용여부'] is bool
+        && data.get('오타감점', 20) is int && data.get('오타감점', 20) >= 0 && data.get('오타감점', 20) <= 100
+        && text(data.get('문구제목', id), 1, 100) && data.get('삭제여부', false) is bool
+        && (!data.get('삭제여부', false) || !data['사용여부']);
     }
-    match /settings/event {
-      function valid(data) {
-        return data.keys().hasAll(['phase', 'updated_at'])
-          && data.keys().hasOnly(['phase', 'updated_at', 'typingEnabled', 'submissionsEnabled', 'welcomeEnabled', 'activeChallengeId'])
-          && data.phase in ['A', 'B', 'C'] && data.updated_at == request.time
-          && data.get('typingEnabled', true) is bool && data.get('submissionsEnabled', true) is bool
-          && data.get('welcomeEnabled', false) is bool
-          && (!('activeChallengeId' in data) || (text(data.activeChallengeId, 1, 100)
-            && getAfter(/databases/$(database)/documents/challenges/$(data.activeChallengeId)).data.enabled == true
-            && getAfter(/databases/$(database)/documents/challenges/$(data.activeChallengeId)).data.get('deleted', false) == false));
-      }
-      allow read: if true;
-      allow create, update: if admin() && valid(request.resource.data);
-      allow delete: if false;
+    function validScore(data) {
+      let metadataOnly = request.method == 'update' && admin()
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['검수상태', '상품수령여부', '검수시각']);
+      return metadataOnly
+        ? data['분당타수'] is int && data['분당타수'] >= 0
+          && data['누적오타'] is int && data['누적오타'] >= 0 && data['누적오타'] <= 10000
+          && data['최종점수'] is int && data['최종점수'] >= 0
+        : exists(path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data['문구ID'] + ''))
+          ? calculatedScore(data)
+          : request.method == 'update' && admin()
+            && data['분당타수'] is int && data['분당타수'] >= 0
+            && data['누적오타'] is int && data['누적오타'] >= 0 && data['누적오타'] <= 10000
+            && data['최종점수'] is int && data['최종점수'] >= 0
+            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['검수상태', '상품수령여부', '검수시각']);
     }
-    match /challenges/{id} {
-      function valid(data) {
-        return id.matches('[a-zA-Z0-9_-]{1,100}')
-          && data.keys().hasAll(['text', 'referenceKeystrokes', 'practice', 'enabled'])
-          && data.keys().hasOnly(['text', 'referenceKeystrokes', 'practice', 'enabled', 'title', 'deleted', 'errorPenalty'])
-          && text(data.text, 1, 1000) && data.referenceKeystrokes is int && data.referenceKeystrokes > 0
-          && data.referenceKeystrokes <= 5000 && data.practice is bool && data.enabled is bool
-          && data.get('errorPenalty', 20) is int && data.get('errorPenalty', 20) >= 0 && data.get('errorPenalty', 20) <= 100
-          && text(data.get('title', id), 1, 100) && data.get('deleted', false) is bool
-          && (!data.get('deleted', false) || !data.enabled);
-      }
-      allow read: if true;
-      allow create: if admin() && valid(request.resource.data);
-      allow update: if admin() && valid(request.resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['title', 'text', 'practice', 'referenceKeystrokes', 'errorPenalty', 'enabled', 'deleted'])
-        && (request.resource.data.enabled || getAfter(/databases/$(database)/documents/settings/event).data.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0') != id);
-      allow delete: if admin() && (!existsAfter(/databases/$(database)/documents/settings/event)
-        || getAfter(/databases/$(database)/documents/settings/event).data.get('activeChallengeId', 'aegukga-verse1-practice-v1-floor0') != id);
+    function calculatedScore(data) {
+      let challenge = get(path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data['문구ID'] + '')).data;
+      let calculated = challenge['기준타수'] * 60000.0 / data['소요시간밀리초'];
+      let penalty = data.get('참가방식', '') == 'record' ? 3 : challenge.get('오타감점', 3);
+      let rawScore = data['분당타수'] - data['누적오타'] * penalty;
+      return (data.get('참가방식', '') == 'record'
+          ? (!data['연습여부'] || (admin() && challenge['연습여부'] == data['연습여부']))
+          : challenge['연습여부'] == data['연습여부'])
+        && data['분당타수'] is int && data['분당타수'] >= 0
+        && data['분당타수'] - 0.5 <= calculated && calculated < data['분당타수'] + 0.5
+        && data['누적오타'] is int && data['누적오타'] >= 0 && data['누적오타'] <= 10000
+        && data['최종점수'] is int && data['최종점수'] == (rawScore > 0 ? rawScore : 0);
     }
-    match /receipts/{id} {
-      function targetExists(data) {
-        return data.get('entry_mode', '') == 'record'
-          ? recordReceipt(id, data.kind)
-          : data.kind == 'letter'
-          ? getAfter(/databases/$(database)/documents/letters/$(id)).data.created_at == request.time
-            && getAfter(/databases/$(database)/documents/letters/$(id)).data.owner_uid == data.owner_uid
-          : getAfter(/databases/$(database)/documents/typingResults/$(id)).data.received_at == request.time
-            && getAfter(/databases/$(database)/documents/typingResults/$(id)).data.owner_uid == data.owner_uid;
-      }
-      // Receipts contain only receipt metadata, never a student's original text or name.
-      allow get: if admin()
-        || (!exists(/databases/$(database)/documents/receipts/$(id)) && uuid(id))
-        || (exists(/databases/$(database)/documents/receipts/$(id))
-          && resource.data.get('entry_mode', '') == 'record' && resource.data.owner_uid == null
-          && resource.data.keys().hasAll(['id', 'owner_uid', 'entry_mode', 'kind', 'payload_hash', 'created_at'])
-          && resource.data.keys().hasOnly(['id', 'owner_uid', 'entry_mode', 'kind', 'payload_hash', 'created_at']))
-        || (signedIn() && exists(/databases/$(database)/documents/receipts/$(id))
-          && resource.data.owner_uid == request.auth.uid);
-      allow create: if (request.resource.data.get('entry_mode', '') == 'record'
-          && (admin() || !signedIn()) && uuid(id)
-          && request.resource.data.keys().hasOnly(['id', 'owner_uid', 'entry_mode', 'kind', 'payload_hash', 'created_at'])
-          && request.resource.data.entry_mode == 'record' && request.resource.data.owner_uid == null
-          && request.resource.data.id == id && request.resource.data.kind in ['letter', 'typing']
-          && request.resource.data.created_at == request.time
-          && request.resource.data.payload_hash is string
-          && request.resource.data.payload_hash.matches('[0-9a-f]{64}')
-          && targetExists(request.resource.data))
-        || (request.resource.data.get('entry_mode', '') != 'record' && admin() && uuid(id)
-        && request.resource.data.keys().hasOnly(['id', 'owner_uid', 'kind', 'payload_hash', 'created_at'])
-        && request.resource.data.id == id && (request.resource.data.owner_uid == request.auth.uid
-          || (request.resource.data.kind == 'typing' && recoveryOwner(getAfter(/databases/$(database)/documents/typingResults/$(id)).data)))
-        && request.resource.data.kind in ['letter', 'typing'] && request.resource.data.created_at == request.time
-        && request.resource.data.payload_hash is string && request.resource.data.payload_hash.matches('[0-9a-f]{64}')
-        && targetExists(request.resource.data))
-        || validOfficialClaim(id, request.resource.data, true) && (admin() || !signedIn());
-      allow list: if admin();
-      allow update: if false;
-      // Admin-only cleanup for typing UUID receipts and exact one-time claims.
-      allow delete: if admin() && (typingReceiptDeleteReady(id, resource.data)
-        || officialClaimDeleteReady(id, resource.data));
+    function validTyping(data, id) {
+      let required = ['문서ID', '이전계정UID', '이름', '문구ID', '소요시간밀리초', '분당타수', '누적오타', '최종점수', '완료시각', '상품수령여부', '연습여부', '검수상태', '접수시각', '검수시각'];
+      let allowed = ['문서ID', '이전계정UID', '참가방식', '학번', '이전참가자ID', '이름', '문구ID', '소요시간밀리초', '분당타수', '누적오타', '최종점수', '완료시각', '상품수령여부', '연습여부', '검수상태', '접수시각', '검수시각', '원본기록ID'];
+      let recordMode = data.get('참가방식', '') == 'record';
+      let validIdentity = recordMode
+        ? data['이전계정UID'] == null && participantNumber(data.get('학번', ''))
+          && !('이전참가자ID' in data) && (!('원본기록ID' in data) || uuid(data['원본기록ID']))
+        : !('참가방식' in data) && !('학번' in data) && studentUid(data.get('이전참가자ID', ''))
+          && text(data['이전계정UID'], 1, 128);
+      return data.keys().hasAll(required) && data.keys().hasOnly(allowed)
+        && data['문서ID'] == id && uuid(id) && validIdentity
+        && text(participant(data), 1, 30) && participantName(data['이름'])
+        && text(data['문구ID'], 1, 100) && data['문구ID'].matches('[a-zA-Z0-9_-]+')
+        && data['소요시간밀리초'] is number && data['소요시간밀리초'] > 0 && data['소요시간밀리초'] <= 3600000
+        && data['완료시각'] is string && data['완료시각'].matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z') && data['완료시각'].size() <= 30
+        && data['접수시각'] is timestamp && (data['검수시각'] == null || data['검수시각'] is timestamp)
+        && data['상품수령여부'] is bool && data['연습여부'] is bool
+        && data['검수상태'] in ['pending', 'verified', 'rejected']
+        && (!data['상품수령여부'] || (!data['연습여부'] && data['검수상태'] == 'verified')) && validScore(data);
+    }
+    function validRecordReceipt(id, data, kind) {
+      return uuid(id) && data.keys().hasAll(['문서ID', '이전계정UID', '참가방식', '접수종류', '내용해시', '생성시각'])
+        && data.keys().hasOnly(['문서ID', '이전계정UID', '참가방식', '접수종류', '내용해시', '생성시각'])
+        && data['문서ID'] == id && data['이전계정UID'] == null && data['참가방식'] == 'record'
+        && data['접수종류'] == kind && data['생성시각'] == request.time
+        && data['내용해시'] is string && data['내용해시'].matches('[0-9a-f]{64}');
+    }
+    function legacyRecoveryReceipt(id, data, kind) {
+      return uuid(id) && data.keys().hasAll(['문서ID', '이전계정UID', '접수종류', '내용해시', '생성시각'])
+        && data.keys().hasOnly(['문서ID', '이전계정UID', '접수종류', '내용해시', '생성시각'])
+        && data['문서ID'] == id && data['접수종류'] == kind && data['생성시각'] == request.time
+        && data['내용해시'] is string && data['내용해시'].matches('[0-9a-f]{64}')
+        && (data['이전계정UID'] == request.auth.uid || (kind == 'typing'
+          && recoveryOwner(getAfter(resultPath(id)).data)
+          && data['이전계정UID'] == getAfter(resultPath(id)).data['이전계정UID']));
+    }
+    function validLetter(data, id) {
+      let required = ['문서ID', '이전계정UID', '별명', '본문', '공개본문', '공개동의', '검수상태', '공개순서', '접수번호', '생성시각', '검수시각'];
+      let allowed = ['문서ID', '이전계정UID', '참가방식', '학번', '이름', '별명', '본문', '공개본문', '공개동의', '검수상태', '공개순서', '접수번호', '생성시각', '검수시각', '최근이력ID'];
+      let recordMode = data.get('참가방식', '') == 'record'
+        && data['이전계정UID'] == null && participantNumber(data.get('학번', ''))
+        && participantName(data.get('이름', '')) && recordLetterContent(data['본문']);
+      let legacyMode = !('참가방식' in data) && !('학번' in data) && !('이름' in data)
+        && text(data['이전계정UID'], 1, 128) && text(data['본문'], 10, 700);
+      let publishedContent = data['공개본문'] == null || (recordMode
+        ? recordLetterContent(data['공개본문']) : text(data['공개본문'], 1, 700));
+      return data.keys().hasAll(required) && data.keys().hasOnly(allowed)
+        && data['문서ID'] == id && uuid(id) && (recordMode || legacyMode)
+        && data['생성시각'] is timestamp && (data['검수시각'] == null || data['검수시각'] is timestamp)
+        && (data['별명'] == null || (text(data['별명'], 1, 30) && !data['별명'].matches('(?s).*\\n.*')))
+        && data['공개동의'] == 1 && data['접수번호'] == id
+        && data['검수상태'] in ['pending', 'approved', 'rejected'] && publishedContent
+        && (data['공개순서'] == null || (data['공개순서'] is int && data['공개순서'] >= 0 && data['공개순서'] <= 1000000))
+        && (!('최근이력ID' in data) || historyId(data['최근이력ID']));
+    }
+    function recordLetterContent(value) {
+      return value is string && value.toUtf8().size() > 0 && value.toUtf8().size() <= 131072
+        && value.trim() == value;
     }
     function historyId(value) {
       return value is string && value.matches('[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-restore|-purge)?');
     }
-    function validLetter(data, id) {
-      let required = ['id', 'owner_uid', 'nickname', 'content', 'published_content', 'consent_to_publish', 'status', 'publish_order', 'submission_key', 'created_at', 'reviewed_at'];
-      let allowed = ['id', 'owner_uid', 'nickname', 'content', 'published_content', 'consent_to_publish', 'status', 'publish_order', 'submission_key', 'created_at', 'reviewed_at', 'last_history_id', 'entry_mode', 'student_number', 'student_name'];
-      let recordMode = data.get('entry_mode', '') == 'record'
-        && data.owner_uid == null && participantNumber(data.student_number)
-        && participantName(data.student_name) && recordLetterContent(data.content);
-      let legacyMode = !('entry_mode' in data) && !('student_number' in data)
-        && !('student_name' in data) && text(data.owner_uid, 1, 128)
-        && text(data.content, 10, 700);
-      let publishedContent = data.published_content == null || (recordMode
-        ? recordLetterContent(data.published_content)
-        : text(data.published_content, 1, 700));
-      return data.keys().hasAll(required) && data.keys().hasOnly(allowed)
-        && data.id == id && uuid(id) && (recordMode || legacyMode)
-        && data.created_at is timestamp && (data.reviewed_at == null || data.reviewed_at is timestamp)
-        && (data.nickname == null || (text(data.nickname, 1, 30) && !data.nickname.matches('(?s).*\\n.*')))
-        && data.consent_to_publish == 1 && data.submission_key == id
-        && data.status in ['pending', 'approved', 'rejected']
-        && publishedContent
-        && (data.publish_order == null || (data.publish_order is int && data.publish_order >= 0 && data.publish_order <= 1000000))
-        && (!('last_history_id' in data) || historyId(data.last_history_id));
+    function publicProjection(data) {
+      return {'문서ID': data['문서ID'], '별명': data['별명'] == null ? '익명' : data['별명'],
+        '본문': data['공개본문'] == null ? data['본문'] : data['공개본문'],
+        '공개순서': data['공개순서'], '정렬순서': data['공개순서'] == null ? 1000001 : data['공개순서']};
     }
     function letterPublicSynced(id, data) {
-        return data.status == 'approved'
-          ? getAfter(/databases/$(database)/documents/publicLetters/$(id)).data == projection(data)
-          : !existsAfter(/databases/$(database)/documents/publicLetters/$(id));
+      let publicPath = path('databases/' + database + '/documents/글쓰기/기본/공개글/' + id + '');
+      return data['검수상태'] == 'approved'
+        ? getAfter(publicPath).data == publicProjection(data) : !existsAfter(publicPath);
     }
     function freshLetterLog(logId, id, action, before, after) {
-      let log = getAfter(/databases/$(database)/documents/letterLogs/$(logId)).data;
-      return historyId(logId) && !exists(/databases/$(database)/documents/letterLogs/$(logId))
-        && log.letter_id == id && log.action == action && log.operator_uid == request.auth.uid
-        && log.created_at == request.time && log.before == before && log.after == after;
+      let logPath = path('databases/' + database + '/documents/글쓰기/기본/검수이력/' + logId + '');
+      let log = getAfter(logPath).data;
+      return historyId(logId) && !exists(logPath) && log['글ID'] == id
+        && log['처리종류'] == action && log['처리관리자UID'] == request.auth.uid
+        && log['생성시각'] == request.time && log['변경전'] == before && log['변경후'] == after;
     }
     function letterEditAudit(id, before, after) {
-      let logId = after.last_history_id;
-      let action = getAfter(/databases/$(database)/documents/letterLogs/$(logId)).data.action;
-      return action in ['edit', 'review'] && before.get('last_history_id', '') != logId
-        && (action != 'review' || after.diff(before).affectedKeys().hasOnly(['status', 'reviewed_at', 'last_history_id']))
+      let logId = after['최근이력ID'];
+      let logPath = path('databases/' + database + '/documents/글쓰기/기본/검수이력/' + logId + '');
+      let action = getAfter(logPath).data['처리종류'];
+      return action in ['edit', 'review'] && before.get('최근이력ID', '') != logId
+        && (action != 'review' || after.diff(before).affectedKeys().hasOnly(['검수상태', '검수시각', '최근이력ID']))
         && freshLetterLog(logId, id, action, before, after);
     }
     function letterRestore(id, after) {
-      let trash = get(/databases/$(database)/documents/letterTrash/$(id)).data;
-      return !existsAfter(/databases/$(database)/documents/letterTrash/$(id))
-        && after.diff(trash.letter).affectedKeys().hasOnly(['status', 'reviewed_at', 'last_history_id'])
-        && after.status == 'pending' && after.reviewed_at == request.time
-        && after.last_history_id == trash.last_history_id + '-restore'
-        && freshLetterLog(after.last_history_id, id, 'restore', trash.letter, after);
+      let trashPath = path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + id + '');
+      let trash = get(trashPath).data;
+      return !existsAfter(trashPath)
+        && after.diff(trash['글원본']).affectedKeys().hasOnly(['검수상태', '검수시각', '최근이력ID'])
+        && after['검수상태'] == 'pending' && after['검수시각'] == request.time
+        && after['최근이력ID'] == trash['최근이력ID'] + '-restore'
+        && freshLetterLog(after['최근이력ID'], id, 'restore', trash['글원본'], after);
     }
-    match /letters/{id} {
-      allow read: if admin();
-      allow create: if validLetter(request.resource.data, id)
-        && ((admin() && letterPublicSynced(id, request.resource.data)
-            && ((!exists(/databases/$(database)/documents/letterTrash/$(id))
-                && request.resource.data.owner_uid == request.auth.uid && request.resource.data.created_at == request.time
-                && request.resource.data.reviewed_at == request.time
-                && freshLetterLog(request.resource.data.last_history_id, id, 'create', null, request.resource.data))
-              || (exists(/databases/$(database)/documents/letterTrash/$(id)) && letterRestore(id, request.resource.data))))
-          || (!signedIn() && validLetter(request.resource.data, id)
-            && request.resource.data.entry_mode == 'record'
-            && !('last_history_id' in request.resource.data)
-            && request.resource.data.owner_uid == null
-            && request.resource.data.created_at == request.time
-            && request.resource.data.status == 'pending'
-            && request.resource.data.published_content == null
-            && request.resource.data.publish_order == null
-            && request.resource.data.reviewed_at == null
-            && writingOpen() && recordReceipt(id, 'letter'))
-          );
-      allow update: if admin() && validLetter(request.resource.data, id)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['nickname', 'content', 'status', 'published_content', 'publish_order', 'reviewed_at', 'last_history_id'])
-        && request.resource.data.reviewed_at == request.time && letterPublicSynced(id, request.resource.data)
-        && letterEditAudit(id, resource.data, request.resource.data);
-      allow delete: if admin() && !existsAfter(/databases/$(database)/documents/publicLetters/$(id))
-        && getAfter(/databases/$(database)/documents/letterTrash/$(id)).data.letter == resource.data
-        && freshLetterLog(getAfter(/databases/$(database)/documents/letterTrash/$(id)).data.last_history_id, id, 'trash', resource.data, null);
+    match /{root}/{eventId} {
+      function inTarget() { return root == '운영설정' && eventId == '행사'; }
+      allow get: if inTarget() && (true);
+      allow create, update: if inTarget() && (admin() && eventValid(request.resource.data));
+      allow list, delete: if inTarget() && (false);
     }
-    match /letterTrash/{id} {
+    match /{root}/{eventId} {
+      function inTarget() { return root == '운영설정' && eventId == '세션'; }
       function valid(data) {
-        return data.keys().hasAll(['letter', 'trashed_at', 'trashed_by', 'last_history_id'])
-          && data.keys().hasOnly(['letter', 'trashed_at', 'trashed_by', 'last_history_id'])
-          && validLetter(data.letter, id) && data.trashed_at == request.time
-          && data.trashed_by == request.auth.uid && uuid(data.last_history_id);
+        return data.keys().hasAll(['공용기기모드', '자동퇴장대기분', '수정시각'])
+          && data.keys().hasOnly(['공용기기모드', '자동퇴장대기분', '학년도', '수정시각'])
+          && data['공용기기모드'] is bool && data['자동퇴장대기분'] is int
+          && data['자동퇴장대기분'] >= 1 && data['자동퇴장대기분'] <= 120
+          && (!('학년도' in data) || (data['학년도'] is int && data['학년도'] >= 2020 && data['학년도'] <= 2100))
+          && data['수정시각'] == request.time;
       }
-      allow read: if admin();
-      allow create: if admin() && valid(request.resource.data)
-        && request.resource.data.letter == get(/databases/$(database)/documents/letters/$(id)).data
-        && !existsAfter(/databases/$(database)/documents/letters/$(id))
-        && !existsAfter(/databases/$(database)/documents/publicLetters/$(id))
-        && freshLetterLog(request.resource.data.last_history_id, id, 'trash', request.resource.data.letter, null);
-      allow update: if false;
-      allow delete: if admin() &&
-        ((existsAfter(/databases/$(database)/documents/letters/$(id))
-            && letterRestore(id, getAfter(/databases/$(database)/documents/letters/$(id)).data))
-          || (!existsAfter(/databases/$(database)/documents/letters/$(id))
-            && !existsAfter(/databases/$(database)/documents/publicLetters/$(id))
-            && freshLetterLog(resource.data.last_history_id + '-purge', id, 'purge', resource.data.letter, null)));
+      allow get: if inTarget() && (true);
+      allow create, update: if inTarget() && (admin() && valid(request.resource.data));
+      allow list, delete: if inTarget() && (false);
     }
-    match /letterLogs/{logId} {
+    match /{root}/{eventId} {
+      function inTarget() { return root == '운영설정' && eventId == '스키마'; }
+      allow get: if inTarget() && (admin());
+      allow list, create, update, delete: if inTarget() && (false);
+    }
+    match /{root}/{uid} {
+      function inTarget() { return root == '관리자'; }
       function valid(data) {
-        return historyId(logId)
-          && data.keys().hasAll(['letter_id', 'operator_uid', 'action', 'before', 'after', 'created_at'])
-          && data.keys().hasOnly(['letter_id', 'operator_uid', 'action', 'before', 'after', 'created_at'])
-          && uuid(data.letter_id) && data.operator_uid == request.auth.uid && data.created_at == request.time
-          && (data.before == null || validLetter(data.before, data.letter_id))
-          && (data.after == null || validLetter(data.after, data.letter_id))
-          && ((data.action == 'create' && data.before == null
-              && !exists(/databases/$(database)/documents/letters/$(data.letter_id))
-              && data.after == getAfter(/databases/$(database)/documents/letters/$(data.letter_id)).data
-              && data.after.last_history_id == logId)
-            || (data.action in ['edit', 'review']
-              && data.before == get(/databases/$(database)/documents/letters/$(data.letter_id)).data
-              && data.after == getAfter(/databases/$(database)/documents/letters/$(data.letter_id)).data
-              && data.after.last_history_id == logId)
-            || (data.action == 'trash' && data.after == null
-              && data.before == get(/databases/$(database)/documents/letters/$(data.letter_id)).data
-              && !existsAfter(/databases/$(database)/documents/letters/$(data.letter_id))
-              && getAfter(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.last_history_id == logId
-              && getAfter(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.letter == data.before)
-            || (data.action == 'restore'
-              && data.before == get(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.letter
-              && logId == get(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.last_history_id + '-restore'
-              && !existsAfter(/databases/$(database)/documents/letterTrash/$(data.letter_id))
-              && data.after == getAfter(/databases/$(database)/documents/letters/$(data.letter_id)).data
-              && data.after.last_history_id == logId)
-            || (data.action == 'purge' && data.after == null
-              && data.before == get(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.letter
-              && logId == get(/databases/$(database)/documents/letterTrash/$(data.letter_id)).data.last_history_id + '-purge'
-              && !existsAfter(/databases/$(database)/documents/letterTrash/$(data.letter_id))
-              && !existsAfter(/databases/$(database)/documents/letters/$(data.letter_id))));
+        return data.keys().hasAll(['사용여부', '이메일', '생성시각'])
+          && data.keys().hasOnly(['사용여부', '이메일', '생성시각']) && data['사용여부'] == true
+          && text(data['이메일'], 3, 254) && data['생성시각'] is timestamp;
       }
-      allow read: if admin();
-      allow create: if admin() && valid(request.resource.data);
-      allow update, delete: if false;
+      allow get: if inTarget() && (signedIn() && (request.auth.uid == uid || admin()));
+      allow list: if inTarget() && (admin());
+      allow create: if inTarget() && (admin() && request.auth.uid != uid && valid(request.resource.data)
+        && request.resource.data['생성시각'] == request.time);
+      allow update: if inTarget() && (false);
+      allow delete: if inTarget() && (admin() && request.auth.uid != uid);
     }
-    function projection(data) {
-      return {'id': data.id, 'nickname': data.nickname == null ? '익명' : data.nickname,
-        'content': data.published_content == null ? data.content : data.published_content,
-        'order': data.publish_order, 'sort_order': data.publish_order == null ? 1000001 : data.publish_order};
+    match /{root}/{eventId} {
+      function inTarget() { return root == '타자대회' && eventId == '2026-11-23'; }
+      allow get: if inTarget() && (resource.data == {'행사명': '타자 대회', '행사일': '2026-11-23', '스키마버전': 5});
+      allow list, create, update, delete: if inTarget() && (false);
     }
-    match /publicLetters/{id} {
-      function valid(data) {
-        let source = getAfter(/databases/$(database)/documents/letters/$(id)).data;
-        return source.status == 'approved' && source.consent_to_publish == 1 && data == projection(source);
-      }
-      allow read: if admin() || welcomeOpen();
-      allow create, update: if admin() && valid(request.resource.data);
-      allow delete: if admin() && (!existsAfter(/databases/$(database)/documents/letters/$(id))
-        || getAfter(/databases/$(database)/documents/letters/$(id)).data.status != 'approved');
+    match /{root}/{eventId} {
+      function inTarget() { return root == '글쓰기' && eventId == '기본'; }
+      allow get: if inTarget() && (resource.data == {'운영명': '글쓰기', '스키마버전': 5});
+      allow list, create, update, delete: if inTarget() && (false);
     }
-    match /typingResults/{id} {
-      function calculatedScore(data) {
-        let challenge = get(/databases/$(database)/documents/challenges/$(data.challengeId)).data;
-        // Force floating division even when elapsedMs was stored as an integer.
-        let calculated = challenge.referenceKeystrokes * 60000.0 / data.elapsedMs;
-        let penalty = data.get('entry_mode', '') == 'record' ? 3 : challenge.get('errorPenalty', 3);
-        let rawScore = data.speed - data.errors * penalty;
-        return (data.get('entry_mode', '') == 'record'
-          ? (!data.practice || (admin() && challenge.practice == data.practice))
-          : challenge.practice == data.practice)
-          && data.speed is int && data.speed >= 0 && data.speed - 0.5 <= calculated && calculated < data.speed + 0.5
-          && data.errors is int && data.errors >= 0 && data.errors <= 10000
-          && data.score is int && data.score == (rawScore > 0 ? rawScore : 0);
-      }
-      function validScore(data) {
-        let metadataOnly = request.method == 'update' && admin()
-          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verificationStatus', 'prizeReceived', 'reviewed_at']);
-        // Old scores remain immutable during moderation even if a challenge's
-        // current penalty differs from the value used when the record arrived.
-        return metadataOnly
-          ? data.speed is int && data.speed >= 0
-            && data.errors is int && data.errors >= 0 && data.errors <= 10000
-            && data.score is int && data.score >= 0
-          : exists(/databases/$(database)/documents/challenges/$(data.challengeId))
-          ? calculatedScore(data)
-          : request.method == 'update' && admin()
-            && data.speed is int && data.speed >= 0
-            && data.errors is int && data.errors >= 0 && data.errors <= 10000
-            && data.score is int && data.score >= 0
-            && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['verificationStatus', 'prizeReceived', 'reviewed_at']);
-      }
-      function valid(data) {
-        let required = ['id', 'owner_uid', 'participantId', 'displayName', 'challengeId', 'elapsedMs', 'speed', 'errors', 'score', 'completedAt', 'prizeReceived', 'practice', 'verificationStatus', 'received_at', 'reviewed_at'];
-        let allowed = ['id', 'owner_uid', 'participantId', 'displayName', 'challengeId', 'elapsedMs', 'speed', 'errors', 'score', 'completedAt', 'prizeReceived', 'practice', 'verificationStatus', 'received_at', 'reviewed_at', 'entry_mode', 'duplicate_of'];
-        let recordMode = data.get('entry_mode', '') == 'record';
-        let validOwner = recordMode
-          ? data.owner_uid == null && participantNumber(data.participantId)
-            && (!('duplicate_of' in data) || uuid(data.duplicate_of))
-          : !('entry_mode' in data) && text(data.owner_uid, 1, 128);
-        return data.keys().hasAll(required) && data.keys().hasOnly(allowed)
-          && data.id == id && uuid(id) && validOwner
-          && text(data.participantId, 1, 30) && participantName(data.displayName)
-          && text(data.challengeId, 1, 100) && data.challengeId.matches('[a-zA-Z0-9_-]+')
-          && data.elapsedMs is number && data.elapsedMs > 0 && data.elapsedMs <= 3600000
-          && data.completedAt is string && data.completedAt.matches('[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:.]+Z') && data.completedAt.size() <= 30
-          && data.received_at is timestamp && (data.reviewed_at == null || data.reviewed_at is timestamp)
-          && data.prizeReceived is bool && data.practice is bool && data.verificationStatus in ['pending', 'verified', 'rejected']
-          && (!data.prizeReceived || (!data.practice && data.verificationStatus == 'verified')) && validScore(data);
-      }
-      function publicRecordEntry(data, id) {
-        return !signedIn() && data.entry_mode == 'record' && data.owner_uid == null
-          && valid(data) && data.practice == false && currentChallenge(data)
-          && data.received_at == request.time && data.reviewed_at == null
-          && data.prizeReceived == false && data.verificationStatus == 'pending'
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '문구'; }
+      allow read: if inTarget() && (true);
+      allow create: if inTarget() && (admin() && challengeValid(id, request.resource.data));
+      allow update: if inTarget() && (admin() && challengeValid(id, request.resource.data)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['문구제목', '문구본문', '연습여부', '기준타수', '오타감점', '사용여부', '삭제여부'])
+        && (request.resource.data['사용여부'] || getAfter(path('databases/' + database + '/documents/운영설정/행사')).data.get('선택문구ID', 'aegukga-verse1-practice-v1-floor0') != id));
+      allow delete: if inTarget() && (admin() && (!existsAfter(path('databases/' + database + '/documents/운영설정/행사'))
+        || getAfter(path('databases/' + database + '/documents/운영설정/행사')).data.get('선택문구ID', 'aegukga-verse1-practice-v1-floor0') != id));
+    }
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '접수확인'; }
+      allow get: if inTarget() && (admin() || (!exists(typingReceiptPath(id)) && uuid(id))
+        || (exists(typingReceiptPath(id)) && resource.data.get('참가방식', '') == 'record'
+          && resource.data['이전계정UID'] == null
+          && resource.data.keys().hasOnly(['문서ID', '이전계정UID', '참가방식', '접수종류', '내용해시', '생성시각']))
+        || (signedIn() && exists(typingReceiptPath(id)) && resource.data.get('이전계정UID', null) == request.auth.uid));
+      allow list: if inTarget() && (admin());
+      allow create: if inTarget() && ((request.resource.data.get('참가방식', '') == 'record'
+          && (admin() || !signedIn()) && validRecordReceipt(id, request.resource.data, 'typing')
+          && recordReceipt(id, 'typing'))
+        || (request.resource.data.get('참가방식', '') != 'record' && admin()
+          && legacyRecoveryReceipt(id, request.resource.data, 'typing') && newReceipt(id, 'typing')));
+      allow update: if inTarget() && (false);
+      allow delete: if inTarget() && (admin() && typingReceiptDeleteReady(id, resource.data));
+    }
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '참여제한'; }
+      allow get, list: if inTarget() && (admin());
+      allow create: if inTarget() && ((admin() || !signedIn()) && validTypingEntry(id, request.resource.data, true));
+      allow update: if inTarget() && (false);
+      allow delete: if inTarget() && (admin() && typingEntryDeleteReady(id, resource.data));
+    }
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '기록'; }
+      function publicEntry(data) {
+        return !signedIn() && data['참가방식'] == 'record' && data['이전계정UID'] == null
+          && validTyping(data, id) && data['연습여부'] == false && currentChallenge(data)
+          && data['접수시각'] == request.time && data['검수시각'] == null
+          && data['상품수령여부'] == false && data['검수상태'] == 'pending'
           && officialClaimReady(id, data) && recordReceipt(id, 'typing');
       }
-      function adminRecordEntry(data, id) {
-        return admin() && data.entry_mode == 'record' && data.owner_uid == null
-          && valid(data) && data.received_at == request.time && data.reviewed_at == request.time
-          && data.prizeReceived == false && data.verificationStatus == 'pending'
-          && (data.practice || officialClaimReady(id, data)) && recordReceipt(id, 'typing');
+      function adminRecordEntry(data) {
+        return admin() && data['참가방식'] == 'record' && data['이전계정UID'] == null
+          && validTyping(data, id) && data['접수시각'] == request.time && data['검수시각'] == request.time
+          && data['상품수령여부'] == false && data['검수상태'] == 'pending'
+          && (data['연습여부'] || officialClaimReady(id, data)) && recordReceipt(id, 'typing');
       }
-      allow read: if admin();
-      // Only pending, receipted backup recovery is allowed; manual result creation has no UI/API.
-      allow create: if publicRecordEntry(request.resource.data, id)
-        || adminRecordEntry(request.resource.data, id)
-        || (admin() && valid(request.resource.data) && recoveryOwner(request.resource.data)
-          && request.resource.data.received_at == request.time
-          && request.resource.data.prizeReceived == false
-          && request.resource.data.verificationStatus == 'pending'
-          && request.resource.data.reviewed_at == null && newReceipt(id, 'typing'));
-      allow update: if admin() && valid(request.resource.data)
-        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prizeReceived', 'verificationStatus', 'reviewed_at'])
-        && request.resource.data.reviewed_at == request.time;
-      allow delete: if admin() && typingResultDeleteReady(id, resource.data);
+      allow read: if inTarget() && (admin());
+      allow create: if inTarget() && (publicEntry(request.resource.data) || adminRecordEntry(request.resource.data)
+        || (admin() && validTyping(request.resource.data, id) && recoveryOwner(request.resource.data)
+          && request.resource.data['접수시각'] == request.time
+          && request.resource.data['상품수령여부'] == false
+          && request.resource.data['검수상태'] == 'pending'
+          && request.resource.data['검수시각'] == null && newReceipt(id, 'typing')));
+      allow update: if inTarget() && (admin() && validTyping(request.resource.data, id)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['상품수령여부', '검수상태', '검수시각'])
+        && request.resource.data['검수시각'] == request.time);
+      allow delete: if inTarget() && (admin() && typingResultDeleteReady(id, resource.data));
     }
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '글쓰기' && eventId == '기본' && subcollection == '접수확인'; }
+      allow get: if inTarget() && (admin() || (!exists(path('databases/' + database + '/documents/글쓰기/기본/접수확인/' + id + '')) && uuid(id))
+        || (exists(path('databases/' + database + '/documents/글쓰기/기본/접수확인/' + id + ''))
+          && resource.data.get('참가방식', '') == 'record' && resource.data['이전계정UID'] == null
+          && resource.data.keys().hasOnly(['문서ID', '이전계정UID', '참가방식', '접수종류', '내용해시', '생성시각']))
+        || (signedIn() && exists(path('databases/' + database + '/documents/글쓰기/기본/접수확인/' + id + '')
+          ) && resource.data.get('이전계정UID', null) == request.auth.uid));
+      allow list: if inTarget() && (admin());
+      allow create: if inTarget() && ((request.resource.data.get('참가방식', '') == 'record'
+          && (admin() || !signedIn()) && validRecordReceipt(id, request.resource.data, 'letter')
+          && recordReceipt(id, 'letter'))
+        || (request.resource.data.get('참가방식', '') != 'record' && admin()
+          && legacyRecoveryReceipt(id, request.resource.data, 'letter') && newReceipt(id, 'letter')));
+      allow update: if inTarget() && (false);
+      allow delete: if inTarget() && (false);
+    }
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '글쓰기' && eventId == '기본' && subcollection == '접수글'; }
+      allow read: if inTarget() && (admin());
+      allow create: if inTarget() && (validLetter(request.resource.data, id)
+        && ((admin() && letterPublicSynced(id, request.resource.data)
+            && ((!exists(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + id + ''))
+                && request.resource.data['이전계정UID'] == request.auth.uid
+                && request.resource.data['생성시각'] == request.time
+                && request.resource.data['검수시각'] == request.time
+                && freshLetterLog(request.resource.data['최근이력ID'], id, 'create', null, request.resource.data))
+              || (exists(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + id + '')) && letterRestore(id, request.resource.data))))
+          || (!signedIn() && request.resource.data['참가방식'] == 'record'
+            && !('최근이력ID' in request.resource.data)
+            && request.resource.data['이전계정UID'] == null
+            && request.resource.data['생성시각'] == request.time
+            && request.resource.data['검수상태'] == 'pending'
+            && request.resource.data['공개본문'] == null
+            && request.resource.data['공개순서'] == null
+            && request.resource.data['검수시각'] == null
+            && writingOpen() && recordReceipt(id, 'letter'))));
+      allow update: if inTarget() && (admin() && validLetter(request.resource.data, id)
+        && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['별명', '본문', '검수상태', '공개본문', '공개순서', '검수시각', '최근이력ID'])
+        && request.resource.data['검수시각'] == request.time && letterPublicSynced(id, request.resource.data)
+        && letterEditAudit(id, resource.data, request.resource.data));
+      allow delete: if inTarget() && (admin() && !existsAfter(path('databases/' + database + '/documents/글쓰기/기본/공개글/' + id + ''))
+        && getAfter(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + id + '')).data['글원본'] == resource.data
+        && freshLetterLog(getAfter(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + id + '')).data['최근이력ID'], id, 'trash', resource.data, null));
+    }
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '글쓰기' && eventId == '기본' && subcollection == '휴지통'; }
+      function valid(data) {
+        return data.keys().hasAll(['글원본', '삭제시각', '삭제관리자UID', '최근이력ID'])
+          && data.keys().hasOnly(['글원본', '삭제시각', '삭제관리자UID', '최근이력ID'])
+          && validLetter(data['글원본'], id) && data['삭제시각'] == request.time
+          && data['삭제관리자UID'] == request.auth.uid && uuid(data['최근이력ID']);
+      }
+      allow read: if inTarget() && (admin());
+      allow create: if inTarget() && (admin() && valid(request.resource.data)
+        && request.resource.data['글원본'] == get(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + '')).data
+        && !existsAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + ''))
+        && !existsAfter(path('databases/' + database + '/documents/글쓰기/기본/공개글/' + id + ''))
+        && freshLetterLog(request.resource.data['최근이력ID'], id, 'trash', request.resource.data['글원본'], null));
+      allow update: if inTarget() && (false);
+      allow delete: if inTarget() && (admin() &&
+        ((existsAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + ''))
+            && letterRestore(id, getAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + '')).data))
+          || (!existsAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + ''))
+            && !existsAfter(path('databases/' + database + '/documents/글쓰기/기본/공개글/' + id + ''))
+            && freshLetterLog(resource.data['최근이력ID'] + '-purge', id, 'purge', resource.data['글원본'], null))));
+    }
+    match /{root}/{eventId}/{subcollection}/{logId} {
+      function inTarget() { return root == '글쓰기' && eventId == '기본' && subcollection == '검수이력'; }
+      function valid(data) {
+        return historyId(logId) && data.keys().hasAll(['글ID', '처리관리자UID', '처리종류', '변경전', '변경후', '생성시각'])
+          && data.keys().hasOnly(['글ID', '처리관리자UID', '처리종류', '변경전', '변경후', '생성시각'])
+          && uuid(data['글ID']) && data['처리관리자UID'] == request.auth.uid && data['생성시각'] == request.time
+          && (data['변경전'] == null || validLetter(data['변경전'], data['글ID']))
+          && (data['변경후'] == null || validLetter(data['변경후'], data['글ID']))
+          && ((data['처리종류'] == 'create' && data['변경전'] == null
+              && !exists(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + data['글ID'] + ''))
+              && data['변경후'] == getAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + data['글ID'] + '')).data
+              && data['변경후']['최근이력ID'] == logId)
+            || (data['처리종류'] in ['edit', 'review']
+              && data['변경전'] == get(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + data['글ID'] + '')).data
+              && data['변경후'] == getAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + data['글ID'] + '')).data
+              && data['변경후']['최근이력ID'] == logId)
+            || (data['처리종류'] == 'trash' && data['변경후'] == null
+              && data['변경전'] == get(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + data['글ID'] + '')).data
+              && !existsAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + data['글ID'] + ''))
+              && getAfter(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + data['글ID'] + '')).data['최근이력ID'] == logId
+              && getAfter(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + data['글ID'] + '')).data['글원본'] == data['변경전'])
+            || (data['처리종류'] == 'restore'
+              && data['변경전'] == get(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + data['글ID'] + '')).data['글원본']
+              && logId == get(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + data['글ID'] + '')).data['최근이력ID'] + '-restore'
+              && !existsAfter(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + data['글ID'] + ''))
+              && data['변경후'] == getAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + data['글ID'] + '')).data
+              && data['변경후']['최근이력ID'] == logId)
+            || (data['처리종류'] == 'purge' && data['변경후'] == null
+              && data['변경전'] == get(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + data['글ID'] + '')).data['글원본']
+              && logId == get(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + data['글ID'] + '')).data['최근이력ID'] + '-purge'
+              && !existsAfter(path('databases/' + database + '/documents/글쓰기/기본/휴지통/' + data['글ID'] + ''))
+              && !existsAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + data['글ID'] + ''))));
+      }
+      allow read: if inTarget() && (admin());
+      allow create: if inTarget() && (admin() && valid(request.resource.data));
+      allow update, delete: if inTarget() && (false);
+    }
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '글쓰기' && eventId == '기본' && subcollection == '공개글'; }
+      function valid(data) {
+        let source = getAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + '')).data;
+        return source['검수상태'] == 'approved' && source['공개동의'] == 1 && data == publicProjection(source);
+      }
+      allow read: if inTarget() && (admin() || welcomeOpen());
+      allow create, update: if inTarget() && (admin() && valid(request.resource.data));
+      allow delete: if inTarget() && (admin() && (!existsAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + ''))
+        || getAfter(path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + '')).data['검수상태'] != 'approved'));
+    }
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '보관자료' && eventId == '이전자료' && subcollection == '학생명부'; } allow read: if inTarget() && (admin()); allow write: if inTarget() && (false); }
+    match /{root}/{eventId}/{subcollection}/{id} {
+      function inTarget() { return root == '보관자료' && eventId == '이전자료' && subcollection == '학생제재이력'; } allow read: if inTarget() && (admin()); allow write: if inTarget() && (false); }
     match /{document=**} { allow read, write: if false; }
   }
 }

@@ -1,4 +1,4 @@
-import { mountObyeol } from './obyeol.js?v=typing-delete-v6-2';
+import { mountObyeol } from './obyeol.js?v=db-schema-5';
 
 // Presentation only: saving, retries and backups stay in app.js/storage.js.
 export function mountRecordCard() {

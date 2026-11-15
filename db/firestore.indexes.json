@@ -3,210 +3,210 @@
     {
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "`검수상태`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "created_at",
+          "fieldPath": "`생성시각`",
           "order": "ASCENDING"
         }
       ],
-      "collectionGroup": "letters",
+      "collectionGroup": "접수글",
       "queryScope": "COLLECTION"
     },
     {
       "fields": [
         {
-          "fieldPath": "status",
+          "fieldPath": "`검수상태`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "created_at",
+          "fieldPath": "`생성시각`",
           "order": "DESCENDING"
         }
       ],
-      "collectionGroup": "letters",
+      "collectionGroup": "접수글",
       "queryScope": "COLLECTION"
     },
     {
       "fields": [
         {
-          "fieldPath": "letter.status",
+          "fieldPath": "`글원본`.`검수상태`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "trashed_at",
+          "fieldPath": "`삭제시각`",
           "order": "ASCENDING"
         }
       ],
-      "collectionGroup": "letterTrash",
+      "collectionGroup": "휴지통",
       "queryScope": "COLLECTION"
     },
     {
       "fields": [
         {
-          "fieldPath": "letter.status",
+          "fieldPath": "`글원본`.`검수상태`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "trashed_at",
+          "fieldPath": "`삭제시각`",
           "order": "DESCENDING"
         }
       ],
-      "collectionGroup": "letterTrash",
+      "collectionGroup": "휴지통",
       "queryScope": "COLLECTION"
     },
     {
       "fields": [
         {
-          "fieldPath": "challengeId",
+          "fieldPath": "`문구ID`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "score",
+          "fieldPath": "`최종점수`",
           "order": "DESCENDING"
         },
         {
-          "fieldPath": "errors",
+          "fieldPath": "`누적오타`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "elapsedMs",
+          "fieldPath": "`소요시간밀리초`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "completedAt",
+          "fieldPath": "`완료시각`",
           "order": "ASCENDING"
         }
       ],
-      "collectionGroup": "typingResults",
+      "collectionGroup": "기록",
       "queryScope": "COLLECTION"
     },
     {
       "fields": [
         {
-          "fieldPath": "verificationStatus",
+          "fieldPath": "`검수상태`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "received_at",
+          "fieldPath": "`접수시각`",
           "order": "DESCENDING"
         }
       ],
-      "collectionGroup": "typingResults",
+      "collectionGroup": "기록",
       "queryScope": "COLLECTION"
     },
     {
       "fields": [
         {
-          "fieldPath": "challengeId",
+          "fieldPath": "`문구ID`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "verificationStatus",
+          "fieldPath": "`검수상태`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "score",
+          "fieldPath": "`최종점수`",
           "order": "DESCENDING"
         },
         {
-          "fieldPath": "errors",
+          "fieldPath": "`누적오타`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "elapsedMs",
+          "fieldPath": "`소요시간밀리초`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "completedAt",
+          "fieldPath": "`완료시각`",
           "order": "ASCENDING"
         }
       ],
-      "collectionGroup": "typingResults",
+      "collectionGroup": "기록",
       "queryScope": "COLLECTION"
     },
     {
       "fields": [
         {
-          "fieldPath": "challengeId",
+          "fieldPath": "`문구ID`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "received_at",
+          "fieldPath": "`접수시각`",
           "order": "DESCENDING"
         }
       ],
-      "collectionGroup": "typingResults",
+      "collectionGroup": "기록",
       "queryScope": "COLLECTION"
     },
     {
       "fields": [
         {
-          "fieldPath": "challengeId",
+          "fieldPath": "`문구ID`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "verificationStatus",
+          "fieldPath": "`검수상태`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "received_at",
+          "fieldPath": "`접수시각`",
           "order": "DESCENDING"
         }
       ],
-      "collectionGroup": "typingResults",
+      "collectionGroup": "기록",
       "queryScope": "COLLECTION"
     },
     {
       "fields": [
         {
-          "fieldPath": "letter_id",
+          "fieldPath": "`글ID`",
           "order": "ASCENDING"
         },
         {
-          "fieldPath": "created_at",
+          "fieldPath": "`생성시각`",
           "order": "DESCENDING"
         }
       ],
-      "collectionGroup": "letterLogs",
+      "collectionGroup": "검수이력",
       "queryScope": "COLLECTION"
     }
   ],
   "fieldOverrides": [
     {
-      "collectionGroup": "letters",
-      "fieldPath": "content",
+      "collectionGroup": "접수글",
+      "fieldPath": "`본문`",
       "indexes": []
     },
     {
-      "collectionGroup": "letters",
-      "fieldPath": "published_content",
+      "collectionGroup": "접수글",
+      "fieldPath": "`공개본문`",
       "indexes": []
     },
     {
-      "collectionGroup": "receipts",
-      "fieldPath": "payload_hash",
+      "fieldPath": "`변경전`",
+      "collectionGroup": "검수이력",
       "indexes": []
     },
     {
-      "fieldPath": "before",
-      "collectionGroup": "letterLogs",
+      "fieldPath": "`변경후`",
+      "collectionGroup": "검수이력",
       "indexes": []
     },
     {
-      "fieldPath": "after",
-      "collectionGroup": "letterLogs",
+      "fieldPath": "`글원본`.`본문`",
+      "collectionGroup": "휴지통",
       "indexes": []
     },
     {
-      "fieldPath": "letter.content",
-      "collectionGroup": "letterTrash",
+      "fieldPath": "`글원본`.`공개본문`",
+      "collectionGroup": "휴지통",
       "indexes": []
     },
     {
-      "fieldPath": "letter.published_content",
-      "collectionGroup": "letterTrash",
+      "collectionGroup": "접수확인",
+      "fieldPath": "`내용해시`",
       "indexes": []
     }
   ]

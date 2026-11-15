@@ -1,7 +1,7 @@
-import { errorMessage, getPublicDb } from '../db/firebase.js?v=ops-20261113';
-import { readEvent } from '../db/public.js?v=typing-fix-20261113';
-import { submitLetter } from '../db/database.js?v=typing-fix-20261113';
-import { normalizeText, unicodeLength, validateSubmission } from '../common.js?v=record-entry-1';
+import { errorMessage, getPublicDb } from '../db/firebase.js?v=db-schema-5';
+import { readEvent } from '../db/public.js?v=db-schema-5';
+import { submitLetter } from '../db/database.js?v=db-schema-5';
+import { normalizeText, unicodeLength, validateSubmission } from '../common.js?v=db-schema-5';
 
 const form = document.querySelector('#write-form');
 const studentNumber = document.querySelector('#student-number');

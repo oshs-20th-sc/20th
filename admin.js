@@ -5,10 +5,10 @@ import {
   watchAdminSession,
   errorMessage,
   resetAdminPassword,
-} from './db/firebase.js?v=ops-20261113';
-import { readLettersPage, readTypingPage, readChallenges, readEvent, readSessionPolicy } from './db/database.js?v=typing-delete-v6-2';
+} from './db/firebase.js?v=db-schema-5';
+import { readLettersPage, readTypingPage, readChallenges, readEvent, readSessionPolicy } from './db/database.js?v=db-schema-5';
 import { escapeHtml as html, localHref } from './common.js';
-import { state, feature } from './admin/state.js?v=typing-fix-20261113';
+import { state, feature } from './admin/state.js?v=db-schema-5';
 import {
   root,
   featureTitle,
@@ -28,11 +28,11 @@ import {
   resetLetterPages,
   resetResultPages,
   bindRenderTab,
-} from './admin/shared.js?v=typing-fix-20261113';
-import { lettersView } from './admin/letters.js?v=typing-fix-20261113';
-import { recordsView } from './admin/typing.js?v=typing-delete-v6-2';
-import { settingsView } from './admin/settings.js?v=typing-fix-20261113';
-import { accountView } from './admin/account.js?v=typing-fix-20261113';
+} from './admin/shared.js?v=db-schema-5';
+import { lettersView } from './admin/letters.js?v=db-schema-5';
+import { recordsView } from './admin/typing.js?v=db-schema-5';
+import { settingsView } from './admin/settings.js?v=db-schema-5';
+import { accountView } from './admin/account.js?v=db-schema-5';
 
 function applySession(next) {
   const entering = !state.session.authenticated || next.uid !== state.session.uid;

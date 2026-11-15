@@ -1,12 +1,12 @@
-import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js?v=ops-20261113';
+import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js?v=db-schema-5';
 import {
   submitTyping,
   readChallenge,
   validateTypingResult,
-} from '../db/database.js?v=typing-delete-v6-2';
+} from '../db/database.js?v=db-schema-5';
 
-import { toCsv, validateParticipant } from '../common.js?v=record-entry-1';
-import { rankResults, rankedAttempts } from './scoring.js?v=record-entry-1';
+import { toCsv, validateParticipant } from '../common.js?v=db-schema-5';
+import { rankResults, rankedAttempts } from './scoring.js?v=db-schema-5';
 
 // Legacy storage identifier is intentionally stable so existing local records survive rebranding.
 const DB_NAME = 'osung-typing';

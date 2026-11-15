@@ -1,10 +1,10 @@
 /** Admin views and actions for typing records. */
-import { adminContext } from '../db/firebase.js?v=ops-20261113';
+import { adminContext } from '../db/firebase.js?v=db-schema-5';
 import {
   deleteTyping,
   readTyping,
   reviewTyping,
-} from '../db/database.js?v=typing-delete-v6-2';
+} from '../db/database.js?v=db-schema-5';
 import { downloadFile, escapeHtml as html } from '../common.js';
 import {
   importResultFile,
@@ -12,7 +12,7 @@ import {
   pendingResults,
   resultsCsv,
   synchronizePending,
-} from '../typing/storage.js?v=typing-delete-v6-2';
+} from '../typing/storage.js?v=db-schema-5';
 import {
   $,
   confirmDiscard,
@@ -26,9 +26,9 @@ import {
   setStatus,
   submit,
   verification,
-} from './shared.js?v=typing-fix-20261113';
-import { renderTab } from './shared.js?v=typing-fix-20261113';
-import { state } from './state.js?v=typing-fix-20261113';
+} from './shared.js?v=db-schema-5';
+import { renderTab } from './shared.js?v=db-schema-5';
+import { state } from './state.js?v=db-schema-5';
 
 const CURRENT_STUDENT_NUMBER = /^[1-3][0-9]{4}$/;
 

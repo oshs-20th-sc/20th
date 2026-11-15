@@ -42,7 +42,7 @@ function setup({ results = {}, receipts = {}, authorized = true, failCommit = fa
         set(ref, data) { writes.push({ op: 'set', ref, data }); },
         async commit() {
           if (!database.authorized) throw Object.assign(new Error('permission denied'), { code: 'permission-denied' });
-          if (writes.some((write) => write.ref.collection === 'receipts' &&
+          if (writes.some((write) => write.ref.collection === 'typingEntries' &&
               write.ref.id.startsWith('official-20261123-') && database.receipts[write.ref.id]))
             throw Object.assign(new Error('claim already exists'), { code: 'permission-denied' });
           for (const write of writes) {
@@ -82,14 +82,14 @@ function setup({ results = {}, receipts = {}, authorized = true, failCommit = fa
             assert.equal(afterReceipts[id], undefined, 'legacy typing receipt must be removed with its result');
           }
         }
-        if (collection === 'receipts' && id.startsWith('official-20261123-')) {
+        if (collection === 'typingEntries' && id.startsWith('official-20261123-')) {
           const claim = database.receipts[id];
           assert.equal(afterResults[claim?.result_id], undefined, 'claim cannot be released while its result exists');
           assert.equal(afterReceipts[claim?.result_id], undefined, 'claim and UUID receipt are deleted together');
         }
       }
       for (const write of writes) {
-        if (write.ref.collection === 'receipts' && database.receipts[write.ref.id]?.kind === 'typing')
+        if (write.ref.collection === 'typingReceipts' && database.receipts[write.ref.id]?.kind === 'typing')
           assert.equal(afterResults[write.ref.id], undefined, 'typing receipt cannot be removed while its result exists');
       }
       database.results = afterResults;

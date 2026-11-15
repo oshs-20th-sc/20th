@@ -1,4 +1,4 @@
-import { toCsv, validatePublicData } from '../common.js?v=record-entry-1';
+import { toCsv, validatePublicData } from '../common.js?v=db-schema-5';
 import {
   collection,
   doc,
@@ -16,21 +16,22 @@ import {
   writeBatch,
   setDoc,
   deleteDoc,
-} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
+} from './store.js?v=db-schema-5';
 import {
   normalizeText,
   unicodeLength,
   UUID_PATTERN,
   validateParticipant,
   validateSubmission,
-} from '../common.js?v=record-entry-1';
-import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=record-entry-1';
-import { CHALLENGE } from '../typing/challenge.js?v=typing-fix-20261113';
-import { ClientError, withDeadline, adminContext } from './firebase.js?v=ops-20261113';
-import { readEvent } from './public.js?v=typing-fix-20261113';
+} from '../common.js?v=db-schema-5';
+import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=db-schema-5';
+import { CHALLENGE } from '../typing/challenge.js?v=db-schema-5';
+import { ClientError, withDeadline, adminContext } from './firebase.js?v=db-schema-5';
+import { readEvent } from './public.js?v=db-schema-5';
+import { COLLECTIONS, SCHEMA_VERSION, encodeData } from './schema.js?v=db-schema-5';
 export const PAGE_SIZE = 100;
 const OFFICIAL_CLAIM_PREFIX = 'official-20261123-';
-export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=typing-fix-20261113';
+export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=db-schema-5';
 export async function payloadHash(payload) {
   const bytes = await crypto.subtle.digest(
     'SHA-256',
@@ -51,7 +52,7 @@ function receiptConflict(kind) {
 }
 
 async function existingRecordReceipt(db, id, kind, hash, legacyHash = null) {
-  const saved = await withDeadline(getDoc(doc(db, 'receipts', id)));
+  const saved = await withDeadline(getDoc(doc(db, kind === 'letter' ? 'letterReceipts' : 'typingReceipts', id)));
   if (!saved.exists()) return null;
   const data = saved.data();
   if (data.entry_mode === 'record' && data.kind === kind &&
@@ -85,7 +86,7 @@ async function createRecordOnce(
   let savedPayload = payload;
   if (claimStudentNumber) {
     const claimId = `${OFFICIAL_CLAIM_PREFIX}${claimStudentNumber}`;
-    const claimRef = doc(db, 'receipts', claimId);
+    const claimRef = doc(db, 'typingEntries', claimId);
     if (asAdmin) {
       const claim = await withDeadline(getDoc(claimRef));
       if (claim.exists()) {
@@ -114,7 +115,7 @@ async function createRecordOnce(
     owner_uid: null,
     [timestampField]: serverTimestamp(),
   });
-  batch.set(doc(db, 'receipts', id), {
+  batch.set(doc(db, kind === 'letter' ? 'letterReceipts' : 'typingReceipts', id), {
     id,
     owner_uid: null,
     entry_mode: 'record',
@@ -269,7 +270,7 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
   };
   const hash = await payloadHash(payload);
   return withDeadline(runTransaction(db, async (tx) => {
-    const receiptRef = doc(db, 'receipts', result.id);
+    const receiptRef = doc(db, 'typingReceipts', result.id);
     const receipt = await tx.get(receiptRef);
     if (receipt.exists()) {
       if (receipt.data().kind !== 'typing' || receipt.data().payload_hash !== hash)
@@ -945,7 +946,7 @@ export async function deleteTyping(db, id) {
   try {
     return await withDeadline(runTransaction(db, async (tx) => {
       const resultRef = doc(db, 'typingResults', id);
-      const receiptRef = doc(db, 'receipts', id);
+      const receiptRef = doc(db, 'typingReceipts', id);
       const [result, receipt] = await Promise.all([tx.get(resultRef), tx.get(receiptRef)]);
       if (!result.exists()) return { id, deleted: false, replayed: true };
 
@@ -959,7 +960,7 @@ export async function deleteTyping(db, id) {
       let claimRef = null;
       let claim = null;
       if (officialRecord && /^[1-3][0-9]{4}$/.test(data.participantId ?? '')) {
-        claimRef = doc(db, 'receipts', `${OFFICIAL_CLAIM_PREFIX}${data.participantId}`);
+        claimRef = doc(db, 'typingEntries', `${OFFICIAL_CLAIM_PREFIX}${data.participantId}`);
         claim = await tx.get(claimRef);
       }
 
@@ -988,9 +989,9 @@ export async function releaseOrphanedTypingClaim(db, studentNumber, expectedResu
   if (!/^[1-3][0-9]{4}$/.test(studentNumber ?? '') || !UUID_PATTERN.test(expectedResultId ?? ''))
     throw new ClientError('참가 학번 또는 기록 ID를 확인하세요.', 400);
   return withDeadline(runTransaction(db, async (tx) => {
-    const claimRef = doc(db, 'receipts', `${OFFICIAL_CLAIM_PREFIX}${studentNumber}`);
+    const claimRef = doc(db, 'typingEntries', `${OFFICIAL_CLAIM_PREFIX}${studentNumber}`);
     const resultRef = doc(db, 'typingResults', expectedResultId);
-    const receiptRef = doc(db, 'receipts', expectedResultId);
+    const receiptRef = doc(db, 'typingReceipts', expectedResultId);
     const [claim, result, receipt] = await Promise.all([
       tx.get(claimRef), tx.get(resultRef), tx.get(receiptRef),
     ]);
@@ -1024,35 +1025,22 @@ export function encodeFirestore(value) {
 }
 export async function createPrivateBackup(db) {
   const collections = {};
-  for (const name of [
-    'letters',
-    'typingResults',
-    'receipts',
-    'challenges',
-    'publicLetters',
-    'letterTrash',
-    'letterLogs',
-  ]) {
-    collections[name] = (await allDocuments(db, name)).map((snapshot) => ({
+  for (const name of Object.keys(COLLECTIONS).filter(name => name !== 'settings')) {
+    collections[name] = (await allDocuments(db, name)).map(snapshot => ({
       id: snapshot.id,
-      data: encodeFirestore(snapshot.data()),
+      data: encodeFirestore(encodeData(name, snapshot.data())),
     }));
   }
   const settings = await Promise.all(
-    ['event', 'sessionPolicy'].map((id) => withDeadline(getDoc(doc(db, 'settings', id)))),
+    ['event', 'sessionPolicy'].map(id => withDeadline(getDoc(doc(db, 'settings', id)))),
   );
-  collections.settings = settings
-    .filter((snapshot) => snapshot.exists())
-    .map((snapshot) => ({ id: snapshot.id, data: encodeFirestore(snapshot.data()) }));
-  return {
-    schemaVersion: 4,
-    includesAuthentication: false,
-    backend: 'firebase',
-    projectId: db.app.options.projectId,
-    exportedAt: new Date().toISOString(),
-    collections,
-  };
+  collections.settings = settings.filter(snapshot => snapshot.exists()).map(snapshot => ({
+    id: snapshot.id, data: encodeFirestore(encodeData('settings', snapshot.data())),
+  }));
+  return {schemaVersion: SCHEMA_VERSION, includesAuthentication: false, backend: 'firebase',
+    projectId: db.app.options.projectId, exportedAt: new Date().toISOString(), collections};
 }
+
 export async function exportFirebase(scope, format) {
   if (!(
     (scope === 'public' && format === 'json') ||

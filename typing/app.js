@@ -1,18 +1,18 @@
-import { mountObyeol } from './obyeol.js?v=typing-delete-v6-2';
-import { mountRecordCard } from './record-card.js?v=typing-delete-v6-2';
-import { getPublicDb, errorMessage } from '../db/firebase.js?v=ops-20261113';
-import { readEvent, readChallenge } from '../db/database.js?v=typing-delete-v6-2';
-import { mountLogin } from '../login.js?v=ops-20261113';
-import { downloadFile } from '../common.js?v=record-entry-1';
+import { mountObyeol } from './obyeol.js?v=db-schema-5';
+import { mountRecordCard } from './record-card.js?v=db-schema-5';
+import { getPublicDb, errorMessage } from '../db/firebase.js?v=db-schema-5';
+import { readEvent, readChallenge } from '../db/database.js?v=db-schema-5';
+import { mountLogin } from '../login.js?v=db-schema-5';
+import { downloadFile } from '../common.js?v=db-schema-5';
 import {
   initialInputState,
   commitInput,
   compositionStart,
   compositionEnd,
   isComplete,
-} from './engine.js?v=typing-fix-20261113';
-import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=record-entry-1';
-import { saveResult } from './storage.js?v=typing-delete-v6-2';
+} from './engine.js?v=db-schema-5';
+import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=db-schema-5';
+import { saveResult } from './storage.js?v=db-schema-5';
 
 const elements = Object.fromEntries(
   [

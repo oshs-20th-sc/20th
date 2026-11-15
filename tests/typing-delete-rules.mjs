@@ -6,8 +6,7 @@ const require = createRequire(import.meta.url);
 const { initializeTestEnvironment, assertFails, assertSucceeds } = require('@firebase/rules-unit-testing');
 const firebase = require('firebase/compat/app');
 require('firebase/compat/firestore');
-const doc = (db, collection, id) => db.collection(collection).doc(id);
-const getDoc = (ref) => ref.get();
+const doc = (db, path, id) => db.doc(`${path}/${id}`);
 const setDoc = (ref, data) => ref.set(data);
 const deleteDoc = (ref) => ref.delete();
 const runTransaction = (db, callback) => db.runTransaction(callback);
@@ -15,181 +14,142 @@ const writeBatch = (db) => db.batch();
 const serverTimestamp = () => firebase.firestore.FieldValue.serverTimestamp();
 
 const projectId = 'demo-oshs-delete-rules';
-const rules = await readFile(new URL('../db/firestore.rules', import.meta.url), 'utf8');
+const rules = await readFile(new URL(process.env.FIRESTORE_RULES ?? '../db/firestore.rules', import.meta.url), 'utf8');
 const env = await initializeTestEnvironment({
   projectId,
   firestore: { host: '127.0.0.1', port: 8088, rules },
 });
-const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
-const claimId = (number) => `official-20261123-${number}`;
+const paths = {
+  admins: '관리자', settings: '운영설정', challenges: '타자대회/2026-11-23/문구',
+  results: '타자대회/2026-11-23/기록', entries: '타자대회/2026-11-23/참여제한',
+  typingReceipts: '타자대회/2026-11-23/접수확인', letterReceipts: '글쓰기/기본/접수확인',
+};
 const adminDb = env.authenticatedContext('test-admin').firestore();
 const studentDb = env.unauthenticatedContext().firestore();
 let passed = 0;
+const id = (n) => `00000000-0000-4000-8000-${String(n).padStart(12, '0')}`;
 
 async function seed(rows) {
   await env.withSecurityRulesDisabled(async (context) => {
     const firestore = context.firestore();
-    for (const [collection, key, data] of rows)
-      await setDoc(doc(firestore, collection, key), data);
+    for (const [path, key, data] of rows) await setDoc(doc(firestore, path, key), data);
   });
 }
-async function read(db, collection, key) { return getDoc(doc(db, collection, key)); }
-async function removeTogether(db, recordId, studentNumber, removeClaim = true) {
-  const resultRef = doc(db, 'typingResults', recordId);
-  const receiptRef = doc(db, 'receipts', recordId);
-  const claimRef = doc(db, 'receipts', claimId(studentNumber));
+async function read(db, path, key) { return doc(db, path, key).get(); }
+async function removeTogether(db, recordId, studentNumber, removeEntry = true) {
+  const resultRef = doc(db, paths.results, recordId);
+  const receiptRef = doc(db, paths.typingReceipts, recordId);
+  const entryRef = doc(db, paths.entries, studentNumber);
   return runTransaction(db, async (tx) => {
-    await Promise.all([tx.get(resultRef), tx.get(receiptRef), tx.get(claimRef)]);
-    tx.delete(resultRef);
-    tx.delete(receiptRef);
-    if (removeClaim) tx.delete(claimRef);
+    await Promise.all([tx.get(resultRef), tx.get(receiptRef), tx.get(entryRef)]);
+    tx.delete(resultRef); tx.delete(receiptRef);
+    if (removeEntry) tx.delete(entryRef);
   });
 }
 function record(recordId, number, mode = 'record') {
   return mode === 'record'
-    ? { id: recordId, entry_mode: 'record', owner_uid: null, participantId: number, practice: false }
-    : { id: recordId, owner_uid: 'legacy-account', participantId: 'legacy-account' };
+    ? { 문서ID: recordId, 참가방식: 'record', 이전계정UID: null, 학번: number, 연습여부: false }
+    : { 문서ID: recordId, 이전계정UID: 'legacy-account', 이전참가자ID: 'legacy-account' };
 }
-function recordReceipt(recordId) {
-  return { id: recordId, owner_uid: null, entry_mode: 'record', kind: 'typing', payload_hash: 'a'.repeat(64), created_at: new Date() };
+function receipt(recordId) {
+  return { 문서ID: recordId, 이전계정UID: null, 참가방식: 'record', 접수종류: 'typing', 내용해시: 'a'.repeat(64), 생성시각: new Date() };
 }
-function officialClaim(recordId, number) {
-  return { kind: 'typingEntry', result_id: recordId, student_number: number, created_at: new Date() };
+function entry(recordId, number) {
+  return { 접수종류: 'typingEntry', 기록ID: recordId, 학번: number, 생성시각: new Date() };
 }
 
 try {
   await env.withSecurityRulesDisabled(async (context) => {
-    const firestore = context.firestore();
-    await setDoc(doc(firestore, 'admins', 'test-admin'), { enabled: true, email: 'test@example.invalid', created_at: new Date() });
+    await setDoc(doc(context.firestore(), paths.admins, 'test-admin'), { 사용여부: true, 이메일: 'test@example.invalid', 생성시각: new Date() });
   });
 
-  // Exact result, UUID receipt, and its official one-time claim are removed in one authorized transaction.
-  await seed([
-    ['typingResults', id(1), record(id(1), '20101')],
-    ['receipts', id(1), recordReceipt(id(1))],
-    ['receipts', claimId('20101'), officialClaim(id(1), '20101')],
-  ]);
+  // The result, its retry receipt, and only its matching one-time entry are deleted atomically.
+  await seed([[paths.results, id(1), record(id(1), '20101')], [paths.typingReceipts, id(1), receipt(id(1))], [paths.entries, '20101', entry(id(1), '20101')]]);
   await assertSucceeds(removeTogether(adminDb, id(1), '20101'));
-  assert.equal((await read(adminDb, 'typingResults', id(1))).exists, false);
-  assert.equal((await read(adminDb, 'receipts', id(1))).exists, false);
-  assert.equal((await read(adminDb, 'receipts', claimId('20101'))).exists, false);
+  assert.equal((await read(adminDb, paths.results, id(1))).exists, false);
+  assert.equal((await read(adminDb, paths.typingReceipts, id(1))).exists, false);
+  assert.equal((await read(adminDb, paths.entries, '20101')).exists, false);
   passed++;
 
-  // Each partial deletion is rejected, so the three documents cannot be left inconsistent.
-  await seed([
-    ['typingResults', id(2), record(id(2), '20102')],
-    ['receipts', id(2), recordReceipt(id(2))],
-    ['receipts', claimId('20102'), officialClaim(id(2), '20102')],
-  ]);
-  await assertFails(deleteDoc(doc(adminDb, 'typingResults', id(2))));
-  await assertFails(deleteDoc(doc(adminDb, 'receipts', id(2))));
-  await assertFails(deleteDoc(doc(adminDb, 'receipts', claimId('20102'))));
-  assert.equal((await read(adminDb, 'typingResults', id(2))).exists, true);
-  assert.equal((await read(adminDb, 'receipts', id(2))).exists, true);
-  assert.equal((await read(adminDb, 'receipts', claimId('20102'))).exists, true);
+  // Each partial deletion is denied, so related records stay consistent.
+  await seed([[paths.results, id(2), record(id(2), '20102')], [paths.typingReceipts, id(2), receipt(id(2))], [paths.entries, '20102', entry(id(2), '20102')]]);
+  await assertFails(deleteDoc(doc(adminDb, paths.results, id(2))));
+  await assertFails(deleteDoc(doc(adminDb, paths.typingReceipts, id(2))));
+  await assertFails(deleteDoc(doc(adminDb, paths.entries, '20102')));
+  assert.equal((await read(adminDb, paths.results, id(2))).exists, true);
+  assert.equal((await read(adminDb, paths.typingReceipts, id(2))).exists, true);
+  assert.equal((await read(adminDb, paths.entries, '20102')).exists, true);
   passed++;
 
-  // A signed-in non-admin cannot delete a result and an anonymous client cannot delete its receipt.
   const nonAdminDb = env.authenticatedContext('student-user').firestore();
-  await assertFails(deleteDoc(doc(nonAdminDb, 'typingResults', id(2))));
-  await assertFails(deleteDoc(doc(studentDb, 'receipts', id(2))));
+  await assertFails(deleteDoc(doc(nonAdminDb, paths.results, id(2))));
+  await assertFails(deleteDoc(doc(studentDb, paths.typingReceipts, id(2))));
   passed++;
 
-  // Deleting a duplicate row retains the claim that belongs to a different valid result.
-  await seed([
-    ['typingResults', id(3), record(id(3), '20103')],
-    ['typingResults', id(4), record(id(4), '20103')],
-    ['receipts', id(3), recordReceipt(id(3))],
-    ['receipts', claimId('20103'), officialClaim(id(4), '20103')],
-  ]);
+  // Removing a duplicate row cannot release the entry for another real result.
+  await seed([[paths.results, id(3), record(id(3), '20103')], [paths.results, id(4), record(id(4), '20103')],
+    [paths.typingReceipts, id(3), receipt(id(3))], [paths.entries, '20103', entry(id(4), '20103')]]);
   await assertSucceeds(removeTogether(adminDb, id(3), '20103', false));
-  assert.equal((await read(adminDb, 'typingResults', id(4))).exists, true);
-  assert.equal((await read(adminDb, 'receipts', claimId('20103'))).data().result_id, id(4));
+  assert.equal((await read(adminDb, paths.results, id(4))).exists, true);
+  assert.equal((await read(adminDb, paths.entries, '20103')).data().기록ID, id(4));
   passed++;
 
-  // An orphaned claim and any matching receipt can be safely removed only after the result is gone.
-  await seed([
-    ['receipts', id(5), recordReceipt(id(5))],
-    ['receipts', claimId('20105'), officialClaim(id(5), '20105')],
-  ]);
+  // An orphaned entry may be released only after its matching receipt and absent result are verified.
+  await seed([[paths.typingReceipts, id(5), receipt(id(5))], [paths.entries, '20105', entry(id(5), '20105')]]);
   await assertSucceeds(runTransaction(adminDb, async (tx) => {
-    const resultRef = doc(adminDb, 'typingResults', id(5));
-    const receiptRef = doc(adminDb, 'receipts', id(5));
-    const claimRef = doc(adminDb, 'receipts', claimId('20105'));
-    await Promise.all([tx.get(resultRef), tx.get(receiptRef), tx.get(claimRef)]);
-    tx.delete(receiptRef); tx.delete(claimRef);
+    const result = doc(adminDb, paths.results, id(5)), receiptRef = doc(adminDb, paths.typingReceipts, id(5)), entryRef = doc(adminDb, paths.entries, '20105');
+    await Promise.all([tx.get(result), tx.get(receiptRef), tx.get(entryRef)]); tx.delete(receiptRef); tx.delete(entryRef);
   }));
-  assert.equal((await read(adminDb, 'receipts', id(5))).exists, false);
-  assert.equal((await read(adminDb, 'receipts', claimId('20105'))).exists, false);
+  assert.equal((await read(adminDb, paths.typingReceipts, id(5))).exists, false);
+  assert.equal((await read(adminDb, paths.entries, '20105')).exists, false);
   passed++;
 
-  // Orphan cleanup is rejected if that exact referenced result exists.
-  await seed([
-    ['typingResults', id(6), record(id(6), '20106')],
-    ['receipts', id(6), recordReceipt(id(6))],
-    ['receipts', claimId('20106'), officialClaim(id(6), '20106')],
-  ]);
+  await seed([[paths.results, id(6), record(id(6), '20106')], [paths.typingReceipts, id(6), receipt(id(6))], [paths.entries, '20106', entry(id(6), '20106')]]);
   await assertFails(runTransaction(adminDb, async (tx) => {
-    const resultRef = doc(adminDb, 'typingResults', id(6));
-    const receiptRef = doc(adminDb, 'receipts', id(6));
-    const claimRef = doc(adminDb, 'receipts', claimId('20106'));
-    await Promise.all([tx.get(resultRef), tx.get(receiptRef), tx.get(claimRef)]);
-    tx.delete(receiptRef); tx.delete(claimRef);
+    const result = doc(adminDb, paths.results, id(6)), receiptRef = doc(adminDb, paths.typingReceipts, id(6)), entryRef = doc(adminDb, paths.entries, '20106');
+    await Promise.all([tx.get(result), tx.get(receiptRef), tx.get(entryRef)]); tx.delete(receiptRef); tx.delete(entryRef);
   }));
   passed++;
 
-  // Legacy UID rows remove their matching typing receipt with the result.
-  await seed([
-    ['typingResults', id(7), record(id(7), '', 'legacy')],
-    ['receipts', id(7), { id: id(7), owner_uid: 'legacy-account', kind: 'typing', payload_hash: 'b'.repeat(64), created_at: new Date() }],
-  ]);
+  // Historical UID results still remove their matching receipt but have no school-number entry.
+  await seed([[paths.results, id(7), record(id(7), '', 'legacy')], [paths.typingReceipts, id(7),
+    { 문서ID: id(7), 이전계정UID: 'legacy-account', 접수종류: 'typing', 내용해시: 'b'.repeat(64), 생성시각: new Date() }]]);
   await assertSucceeds(runTransaction(adminDb, async (tx) => {
-    const resultRef = doc(adminDb, 'typingResults', id(7));
-    const receiptRef = doc(adminDb, 'receipts', id(7));
-    await Promise.all([tx.get(resultRef), tx.get(receiptRef)]);
-    tx.delete(resultRef); tx.delete(receiptRef);
+    const result = doc(adminDb, paths.results, id(7)), receiptRef = doc(adminDb, paths.typingReceipts, id(7));
+    await Promise.all([tx.get(result), tx.get(receiptRef)]); tx.delete(result); tx.delete(receiptRef);
   }));
   passed++;
 
-  // Letter receipts are outside typing cleanup and remain undeletable through this rule.
-  await seed([
-    ['receipts', id(8), { id: id(8), owner_uid: null, entry_mode: 'record', kind: 'letter', payload_hash: 'c'.repeat(64), created_at: new Date() }],
-  ]);
-  await assertFails(deleteDoc(doc(adminDb, 'receipts', id(8))));
+  // Letter retry receipts live elsewhere and cannot be removed through typing cleanup.
+  await seed([[paths.letterReceipts, id(8), { ...receipt(id(8)), 접수종류: 'letter' }]]);
+  await assertFails(deleteDoc(doc(adminDb, paths.letterReceipts, id(8))));
   passed++;
 
-  // Once the old claim has been released, the public create transaction can claim the same student number again.
-  const activeChallenge = 'typing-delete-rule-test';
+  // After deletion, a new official record with a split receipt and student-number key can be accepted.
+  const challengeId = 'typing-delete-rule-test';
   await env.withSecurityRulesDisabled(async (context) => {
-    const firestore = context.firestore();
-    await setDoc(doc(firestore, 'settings', 'event'), { phase: 'A', activeChallengeId: activeChallenge });
-    await setDoc(doc(firestore, 'challenges', activeChallenge), { text: 'abcdefghij', referenceKeystrokes: 10, practice: false, enabled: true });
+    const db = context.firestore();
+    await setDoc(doc(db, paths.settings, '행사'), { 운영단계: 'A', 선택문구ID: challengeId, 수정시각: new Date() });
+    await setDoc(doc(db, paths.challenges, challengeId), { 문구본문: 'abcdefghij', 기준타수: 10, 연습여부: false, 사용여부: true });
   });
-  await seed([
-    ['typingResults', id(9), record(id(9), '20109')],
-    ['receipts', id(9), recordReceipt(id(9))],
-    ['receipts', claimId('20109'), officialClaim(id(9), '20109')],
-  ]);
+  await seed([[paths.results, id(9), record(id(9), '20109')], [paths.typingReceipts, id(9), receipt(id(9))], [paths.entries, '20109', entry(id(9), '20109')]]);
   await assertSucceeds(removeTogether(adminDb, id(9), '20109'));
-  const next = id(10);
-  const batch = writeBatch(studentDb);
-  batch.set(doc(studentDb, 'typingResults', next), {
-    id: next, entry_mode: 'record', owner_uid: null, participantId: '20109', displayName: '학생',
-    challengeId: activeChallenge, elapsedMs: 60000, speed: 10, errors: 0, score: 10,
-    completedAt: '2026-11-16T00:00:00.000Z', prizeReceived: false, practice: false,
-    verificationStatus: 'pending', received_at: serverTimestamp(), reviewed_at: null,
+  const next = id(10), batch = writeBatch(studentDb);
+  batch.set(doc(studentDb, paths.results, next), {
+    문서ID: next, 참가방식: 'record', 이전계정UID: null, 학번: '20109', 이름: '학생', 문구ID: challengeId,
+    소요시간밀리초: 60000, 분당타수: 10, 누적오타: 0, 최종점수: 10,
+    완료시각: '2026-11-16T00:00:00.000Z', 상품수령여부: false, 연습여부: false,
+    검수상태: 'pending', 접수시각: serverTimestamp(), 검수시각: null,
   });
-  batch.set(doc(studentDb, 'receipts', next), {
-    id: next, owner_uid: null, entry_mode: 'record', kind: 'typing', payload_hash: 'd'.repeat(64), created_at: serverTimestamp(),
+  batch.set(doc(studentDb, paths.typingReceipts, next), {
+    문서ID: next, 이전계정UID: null, 참가방식: 'record', 접수종류: 'typing', 내용해시: 'd'.repeat(64), 생성시각: serverTimestamp(),
   });
-  batch.set(doc(studentDb, 'receipts', claimId('20109')), {
-    kind: 'typingEntry', result_id: next, student_number: '20109', created_at: serverTimestamp(),
+  batch.set(doc(studentDb, paths.entries, '20109'), {
+    접수종류: 'typingEntry', 기록ID: next, 학번: '20109', 생성시각: serverTimestamp(),
   });
   await assertSucceeds(batch.commit());
-  assert.equal((await read(adminDb, 'receipts', claimId('20109'))).data().result_id, next);
+  assert.equal((await read(adminDb, paths.entries, '20109')).data().기록ID, next);
   passed++;
 
-  console.log(`firestore delete rules: ${passed} emulator cases passed`);
-} finally {
-  await env.cleanup();
-}
+  console.log(`${process.env.FIRESTORE_RULES ? 'compat' : 'canonical'} Firestore delete rules: ${passed} emulator cases passed`);
+} finally { await env.cleanup(); }
