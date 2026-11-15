@@ -8,6 +8,7 @@ import {
 import { downloadFile, escapeHtml as html } from '../common.js';
 import {
   importResultFile,
+  diagnosePendingResults,
   listLocalResults,
   pendingResults,
   resultsCsv,
@@ -38,6 +39,67 @@ function isRecordEntry(result) {
     CURRENT_STUDENT_NUMBER.test(result?.participantId ?? '');
 }
 
+function pendingDiagnosisText(item, index) {
+  const id = String(item.id ?? '');
+  const label = `기록 ${index + 1}${id ? ` · ${id.slice(0, 8)}` : ''}: `;
+  switch (item.kind) {
+    case 'already_saved':
+      return `${label}이 UUID의 영수증과 서버 기록이 일치합니다. 이미 접수됐습니다.`;
+    case 'receipt_without_result':
+      return `${label}영수증은 이 내용과 일치하지만 서버 기록 문서는 없습니다. 접수 후 기록이 삭제됐거나 서버 상태가 달라졌을 수 있어 운영진 확인이 필요합니다.`;
+    case 'receipt_mismatch':
+      return `${label}같은 UUID에 다른 내용의 접수 영수증이 있습니다. 이 백업을 다시 전송하지 말고 운영진에게 확인해 주세요.`;
+    case 'claim_used':
+      return `${label}공식 참여 키가 다른 접수 ID에 이미 연결되어 있습니다. ${item.resultExists ? '기존 서버 기록이 남아 있습니다.' : '연결된 서버 기록은 현재 없지만 참여 키는 남아 있습니다.'} 중복 제한에 따라 이 전송은 거부됩니다.`;
+    case 'claim_points_here':
+      return `${label}공식 참여 키는 이 접수 ID를 가리키지만 UUID 영수증은 없습니다. 서버 데이터가 일치하지 않아 운영진 확인이 필요합니다.`;
+    case 'claim_inconsistent':
+      return `${label}공식 참여 키의 내용이 예상 형식과 다릅니다. 운영진 확인이 필요합니다.`;
+    case 'challenge_changed':
+      return `${label}현재 선택된 대회 문구가 이 기록의 문구와 다릅니다. 저장 당시 설정은 관리자 기록으로 확인해 주세요.`;
+    case 'challenge_unavailable':
+      return `${label}현재 문구가 비활성화되었거나 삭제 상태입니다. 저장 당시 설정은 관리자 기록으로 확인해 주세요.`;
+    case 'challenge_reference_mismatch':
+      return `${label}현재 문구의 기준 타수가 문구 내용에서 다시 계산한 값과 다릅니다. 문구 설정을 확인해 주세요.`;
+    case 'invalid_payload':
+      return `${label}기기 기록이 현재 서버 검증을 통과하지 못합니다: ${item.reason}`;
+    case 'rules_rejection_unresolved':
+      return `${label}영수증과 공식 참여 키가 없고 현재 문구·점수 검증은 통과합니다. 저장 당시 원인은 현재 정보만으로 확정할 수 없습니다. 배포된 Firestore 규칙과 프로젝트 설정을 확인해 주세요.`;
+    case 'not_record_entry':
+      return `${label}이 진단은 학번·이름 직접 입력 기록만 지원합니다. 기존 계정 백업은 별도로 확인해 주세요.`;
+    case 'invalid_local_id':
+      return `${label}기기 백업의 접수 ID 형식이 올바르지 않습니다.`;
+    case 'invalid_local_identity':
+      return `${label}기기 백업의 학번 또는 이름 형식이 올바르지 않습니다.`;
+    case 'read_failed':
+      return `${label}관리자 읽기 확인에 실패했습니다: ${item.reason}`;
+    default:
+      return `${label}원인을 분류하지 못했습니다. 운영진에게 확인해 주세요.`;
+  }
+}
+
+function showPendingDiagnoses(result) {
+  const output = $('#pending-diagnostics');
+  output.replaceChildren();
+  output.hidden = false;
+  if (!result.total) {
+    output.textContent = '기기에서 미전송 기록을 찾지 못했습니다.';
+    return;
+  }
+  const list = document.createElement('ul');
+  result.diagnostics.forEach((item, index) => {
+    const line = document.createElement('li');
+    line.textContent = pendingDiagnosisText(item, index);
+    list.append(line);
+  });
+  if (result.omitted) {
+    const line = document.createElement('li');
+    line.textContent = `기기 기록 ${result.omitted}건은 한 번에 최대 50건까지만 확인했습니다.`;
+    list.append(line);
+  }
+  output.append(list);
+}
+
 export async function recordsView() {
   $('#view').innerHTML =
     `<div class="actions"><button id="reload">새로고침</button><button id="result-csv">CSV</button><button id="result-json">JSON</button></div>
@@ -55,7 +117,7 @@ export async function recordsView() {
         ['attempts', '전체 시도'],
       ])}<button>검색</button></form>
     <div class="table-scroll" id="result-list"></div><div class="actions" id="pagination"></div>
-    <details class="panel"><summary>기기 백업</summary><p id="pending-count"></p><div class="actions"><button id="sync-pending">미전송 기록 전송</button><button id="local-json">기기 JSON</button><button id="import-results">기록 파일 불러오기</button><input id="result-file" type="file" accept=".json,application/json" hidden /></div></details>`;
+    <details class="panel"><summary>기기 백업</summary><p id="pending-count"></p><div class="actions"><button id="sync-pending">미전송 기록 전송</button><button id="diagnose-pending">저장 실패 원인 확인</button><button id="local-json">기기 JSON</button><button id="import-results">기록 파일 불러오기</button><input id="result-file" type="file" accept=".json,application/json" hidden /></div><div id="pending-diagnostics" role="status" aria-live="polite" hidden></div></details>`;
   $('#reload').onclick = () => renderTab(true);
   $('#result-filter').onsubmit = (event) => {
     event.preventDefault();
@@ -96,6 +158,12 @@ export async function recordsView() {
       setStatus(
         `${result.synced}건 저장 · ${result.remaining}건 미전송${result.error ? ` · ${result.error}` : ''}`,
       );
+    });
+  $('#diagnose-pending').onclick = () =>
+    void run(async () => {
+      const result = await diagnosePendingResults();
+      showPendingDiagnoses(result);
+      setStatus('읽기 전용 원인 확인 완료');
     });
   $('#local-json').onclick = () =>
     void run(async () => {

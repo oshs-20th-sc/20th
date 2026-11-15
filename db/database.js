@@ -27,6 +27,7 @@ import {
 import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=record-entry-1';
 import { CHALLENGE } from '../typing/challenge.js?v=typing-fix-20261113';
 import { ClientError, withDeadline, adminContext } from './firebase.js?v=ops-20261113';
+import { readEvent } from './public.js?v=typing-fix-20261113';
 export const PAGE_SIZE = 100;
 const OFFICIAL_CLAIM_PREFIX = 'official-20261123-';
 export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=typing-fix-20261113';
@@ -42,7 +43,7 @@ export async function payloadHash(payload) {
 function receiptConflict(kind) {
   return new ClientError(
     kind === 'typing'
-      ? '기록을 저장하지 못했습니다. 같은 학번의 기존 기록이나 문구 변경 여부를 운영진에게 확인해 주세요.'
+      ? '서버가 타자 기록 접수를 거부했습니다. 같은 학번의 공식 참여 키가 이미 사용됐거나 문구·점수·접수 규칙과 맞지 않을 수 있습니다. 연결된 기록이 삭제되어도 중복 제한은 유지되니 운영진에게 확인해 주세요.'
       : '행사 접수가 마감되었거나 이미 처리된 요청입니다. 접수 상태를 확인해 주세요.',
     409,
     kind === 'typing' ? 'TYPING_REJECTED' : 'DUPLICATE_OR_CLOSED',
@@ -186,6 +187,90 @@ export function validateTypingResult(input, challenge = CHALLENGE) {
   if (input.speed !== computed.speed || input.score !== computed.score)
     throw new ClientError('타수와 최종 점수 계산이 일치하지 않습니다.', 400, 'INVALID_SCORE');
 }
+
+// Read-only diagnosis for an administrator investigating a device backup.
+// It deliberately uses the same private claim path as submission; student
+// clients never receive permission to inspect whether another student number
+// has already used its one-time entry.
+export async function diagnoseTypingSubmission(db, input) {
+  if (input?.entry_mode !== 'record' && input?.entryMode !== 'record')
+    return { kind: 'not_record_entry' };
+  if (!UUID_PATTERN.test(input.id ?? '')) return { kind: 'invalid_local_id' };
+  const identity = validateParticipant({
+    studentNumber: input.participantId,
+    name: input.displayName,
+  });
+  if (!identity.value) return { kind: 'invalid_local_identity' };
+
+  const [receipt, claim] = await Promise.all([
+    withDeadline(getDoc(doc(db, 'receipts', input.id))),
+    withDeadline(getDoc(doc(
+      db,
+      'receipts',
+      `${OFFICIAL_CLAIM_PREFIX}${identity.value.studentNumber}`,
+    ))),
+  ]);
+
+  const payload = {
+    id: input.id,
+    entry_mode: 'record',
+    owner_uid: null,
+    participantId: identity.value.studentNumber,
+    displayName: identity.value.name,
+    challengeId: input.challengeId,
+    elapsedMs: input.elapsedMs,
+    speed: input.speed,
+    errors: input.errors,
+    score: input.score,
+    completedAt: input.completedAt,
+    practice: false,
+    prizeReceived: false,
+    verificationStatus: 'pending',
+    reviewed_at: null,
+  };
+
+  if (receipt.exists()) {
+    const data = receipt.data();
+    const matches = data.entry_mode === 'record' && data.kind === 'typing' &&
+      data.payload_hash === await payloadHash(payload);
+    if (!matches) return { kind: 'receipt_mismatch' };
+    const saved = await withDeadline(getDoc(doc(db, 'typingResults', input.id)));
+    return { kind: saved.exists() ? 'already_saved' : 'receipt_without_result' };
+  }
+
+  if (claim.exists()) {
+    const data = claim.data();
+    if (data.kind !== 'typingEntry' ||
+        data.student_number !== identity.value.studentNumber ||
+        !UUID_PATTERN.test(data.result_id ?? ''))
+      return { kind: 'claim_inconsistent' };
+    const saved = await withDeadline(getDoc(doc(db, 'typingResults', data.result_id)));
+    return {
+      kind: data.result_id === input.id ? 'claim_points_here' : 'claim_used',
+      resultExists: saved.exists(),
+    };
+  }
+
+  const [event, challenge] = await Promise.all([
+    readEvent(db),
+    readChallenge(db, input.challengeId),
+  ]);
+  if (event.activeChallengeId !== input.challengeId)
+    return { kind: 'challenge_changed' };
+  if (!challenge.enabled || challenge.deleted) return { kind: 'challenge_unavailable' };
+  if (countKeystrokes(challenge.text) !== challenge.referenceKeystrokes)
+    return { kind: 'challenge_reference_mismatch' };
+  try {
+    validateTypingResult(payload, challenge);
+  } catch (reason) {
+    return { kind: 'invalid_payload', reason: reason?.message || '기록 검증에 실패했습니다.' };
+  }
+  // No receipt, no official claim, and no current challenge/score mismatch.
+  // The original rejection can no longer be attributed more narrowly without
+  // server-side logs or the state that existed at failure time.
+  return { kind: 'rules_rejection_unresolved' };
+}
+
 export async function submitTyping(db, participant, result, { asAdmin = false } = {}) {
   if (!asAdmin) {
     const identity = validateParticipant(participant);

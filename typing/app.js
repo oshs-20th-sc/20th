@@ -54,6 +54,7 @@ let timer = null;
 let sessionVersion = 0;
 let needsBackup = false;
 let filePrepared = false;
+let failureReason = '';
 let pendingEdit = null;
 let deletionKey = '';
 
@@ -70,8 +71,8 @@ function updateControls() {
   elements['rescue-confirm'].hidden = status !== 'failed' || !needsBackup || !filePrepared;
   elements['attempt-status'].textContent = {
     ready: '',
-    armed: '첫 입력 대기',
-    running: '측정 중',
+    armed: '',
+    running: '',
     saving: '저장 중',
     saved: '저장 완료',
     failed: '저장 실패',
@@ -86,7 +87,7 @@ function transition(next) {
     timer = null;
   }
   updateControls();
-  recordCard.status(next, needsBackup, filePrepared);
+  recordCard.status(next, needsBackup, filePrepared, failureReason);
 }
 
 function showChallenge(current) {
@@ -123,14 +124,6 @@ function highlight(value) {
           ? 'cursor'
           : '';
   });
-  // Follow long prompts inside their own panel without scrolling the page or input.
-  const cursor = spans[Math.min(chars.length, spans.length - 1)];
-  const panel = elements.challenge;
-  if (cursor && panel.scrollHeight > panel.clientHeight) {
-    const top = cursor.offsetTop;
-    if (top < panel.scrollTop || top + cursor.offsetHeight > panel.scrollTop + panel.clientHeight)
-      panel.scrollTop = Math.max(0, top - panel.clientHeight / 2);
-  }
 }
 
 function eventStatus() {
@@ -179,6 +172,7 @@ function beginTiming() {
 async function persist(record) {
   if (saving) return;
   saving = true;
+  failureReason = '';
   const version = sessionVersion;
   transition('saving');
   message('기록 저장 중');
@@ -193,6 +187,7 @@ async function persist(record) {
     login.finish();
   } catch (reason) {
     if (version === sessionVersion) {
+      failureReason = errorMessage(reason);
       needsBackup = reason.backupSaved === false;
       transition('failed');
       message(
@@ -277,7 +272,7 @@ async function prepareAttempt() {
     elements.result.hidden = true;
     showChallenge(attempt);
     transition('armed');
-    message('첫 입력부터 측정합니다.');
+    message('');
     elements['typing-input'].focus();
   } catch (reason) {
     message(errorMessage(reason), true);
@@ -372,7 +367,7 @@ elements['rescue-confirm'].addEventListener('click', () => {
   needsBackup = false;
   updateControls();
   message('저장한 기록 파일을 운영진에게 전달하세요.');
-  recordCard.status(status, needsBackup, filePrepared);
+  recordCard.status(status, needsBackup, filePrepared, failureReason);
 });
 function clearAttempt() {
   obyeol.reset();
@@ -386,6 +381,7 @@ function clearAttempt() {
   result = null;
   needsBackup = false;
   filePrepared = false;
+  failureReason = '';
   elapsed = 0;
   input.value = '';
   elements.elapsed.textContent = '0.0';
@@ -393,7 +389,7 @@ function clearAttempt() {
   elements.score.textContent = '—';
   elements.result.hidden = true;
   transition('ready');
-  message('문구를 입력하면 측정이 시작됩니다.');
+  message('');
 }
 const login = mountLogin({
   container: document.querySelector('#login'),

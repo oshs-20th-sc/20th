@@ -26,6 +26,7 @@ import { CHALLENGE } from '/typing/challenge.js';
 import { countKeystrokes } from '/typing/scoring.js';
 export const readEvent = async () => ({activeChallengeId:CHALLENGE.challengeId,phase:'A'});
 export const readChallenge = async () => {const text=window.__challengeText || CHALLENGE.text;return {...CHALLENGE,text,referenceKeystrokes:countKeystrokes(text)}};
+export const diagnoseTypingSubmission=async()=>({kind:'rules_rejection_unresolved'});
 export const validateTypingResult = value => value;
 export async function submitTyping(db, participant, record) {
   window.__submitted.push(structuredClone(record));
@@ -119,7 +120,8 @@ try {
     await page.keyboard.press('Backspace'); await page.keyboard.press('Backspace');
     assert.equal(await page.locator('#errors').textContent(),'2');
     await page.keyboard.insertText('나');
-    assert.equal(await page.locator('#obyeol').getAttribute('data-mood'),'focus');
+    assert.equal(await page.locator('#obyeol').getAttribute('data-mood'),'angry');
+    await page.clock.fastForward(1500);
     for(const char of '다라마바사아자') await page.keyboard.insertText(char);
     assert.equal(await page.locator('#obyeol').getAttribute('data-mood'),'happy');
     await shot(page,'reaction-happy');
@@ -199,22 +201,22 @@ try {
     await page.keyboard.insertText('틀');
     await page.locator('#typing-input').evaluate(input=>input.select());
     await page.keyboard.insertText('가');
-    assert.equal(await page.locator('#obyeol').getAttribute('data-mood'),'focus');
+    assert.equal(await page.locator('#obyeol').getAttribute('data-mood'),'surprised');
     assert.equal(await page.locator('#errors').textContent(),'1');
     const colors=await page.locator('#challenge .correct').first().evaluate(el=>({bg:getComputedStyle(el).backgroundColor,color:getComputedStyle(el).color}));
     assert.equal(colors.bg,'rgba(0, 0, 0, 0)');
     assert.equal(colors.color,'rgb(23, 104, 65)');
     await page.keyboard.insertText(text.slice(1,250));
-    assert(await page.locator('#challenge').evaluate(el=>el.scrollTop>0));
+    assert(await page.locator('#challenge').evaluate(el=>el.scrollHeight<=el.clientHeight+1));
     await overflow(page); await shot(page,'long-prompt-mobile');
     await page.evaluate(()=>window.dispatchEvent(new Event('blur')));
     await context.close();
-    report.push({case:'selection correction, color-only feedback, long prompt follows cursor without page overflow',passed:true});
+    report.push({case:'selection correction, color-only feedback, long prompt is fully visible without internal clipping',passed:true});
   }
   {
     const {context,page}=await setup(390,844);
     await page.emulateMedia({reducedMotion:'reduce'}); await login(page);
-    assert.equal(await page.locator('.ob-body').first().evaluate(el=>getComputedStyle(el).animationName),'none');
+    assert.equal(await page.locator('.ob-float').first().evaluate(el=>getComputedStyle(el).animationName),'none');
     await page.keyboard.insertText('동');
     await page.locator('#typing-input').dispatchEvent('paste');
     await waitText(page,'#feedback','직접 입력');

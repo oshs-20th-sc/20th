@@ -11,23 +11,21 @@
 </head>
 <body class="inside-page typing-page">
   <main class="container">
-    <div class="inside-nav"><span class="inside-brand">천안오성고등학교 · 20대 학생회</span></div>
     <div class="typing-shell">
       <header class="typing-heading">
-        <p class="intro-kicker">20대 학생회</p>
         <h1>타자 대회</h1>
-        <p>문구를 정확히 완성해 주세요. 첫 입력부터 측정합니다.</p>
+        <p>문구를 정확히 완성해 주세요.</p>
       </header>
       <aside class="mascot-aside" aria-label="입력에 반응하는 오별이">
         <div id="obyeol" class="obyeol" data-mood="idle"></div>
-        <p id="obyeol-message">입력을 기다리고 있어요</p>
+        <p id="obyeol-message">준비됐어요!</p>
       </aside>
       <div id="login"></div>
       <div id="student-view" hidden>
         <p id="event-status" role="status" hidden></p>
         <button id="reload" type="button" hidden>다시 불러오기</button>
         <section class="stage-panel" aria-labelledby="challenge-title">
-          <div class="section-top"><h2 id="challenge-title">문구</h2><span id="attempt-status" class="status-chip" role="status"></span></div>
+          <div class="section-top"><h2 id="challenge-title">문구</h2><span id="attempt-status" class="attempt-state" role="status"></span></div>
           <dl class="metrics" aria-live="off">
             <div><dt>시간 (초)</dt><dd id="elapsed">0.0</dd></div>
             <div><dt>누적 오타</dt><dd id="errors">0</dd></div>
@@ -36,7 +34,7 @@
           <p id="challenge" class="challenge" aria-label="입력할 문구"></p>
           <label for="typing-input">문구 입력</label>
           <textarea id="typing-input" rows="3" disabled spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" aria-describedby="feedback"></textarea>
-          <p id="feedback" role="status">문구를 입력하면 측정이 시작됩니다.</p>
+          <p id="feedback" role="status"></p>
           <p id="result" hidden></p>
           <div class="actions"><button id="retry" type="button" hidden>저장 재시도</button><button id="rescue" type="button" hidden>기록 파일 저장</button><button id="rescue-confirm" type="button" hidden>파일 저장 완료</button><button id="show-record" type="button" hidden>타자 기록증 보기</button></div>
         </section>

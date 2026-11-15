@@ -57,7 +57,7 @@ export function mountRecordCard() {
       this.status('saving');
       open();
     },
-    status(next, needsBackup = false, filePrepared = false) {
+    status(next, needsBackup = false, filePrepared = false, failureReason = '') {
       if (!record) return;
       state = next;
       saveStatus.dataset.state = next;
@@ -70,6 +70,7 @@ export function mountRecordCard() {
             ? '서버 저장은 완료되지 않았어요. 저장한 기록 파일을 운영진에게 전달해 주세요.'
             : '서버 저장에 실패했어요. 기기에 보관 중이며, 기록 화면에서 다시 시도할 수 있어요.',
       }[next] ?? '기록 화면에서 저장 상태를 확인해 주세요.';
+      if (next === 'failed' && failureReason) saveStatus.textContent = `${failureReason} ${saveStatus.textContent}`;
       back.textContent = next === 'failed' ? '저장·백업 화면으로 돌아가기' : '기록 화면으로 돌아가기';
     },
     reset() {
