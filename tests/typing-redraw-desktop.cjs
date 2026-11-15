@@ -32,7 +32,7 @@ const measurements=[];
 for(const [width,height] of [[1366,768],[1710,1060]]){
  await page.setViewportSize({width,height});await page.goto('http://127.0.0.1:5176/typing/');await page.locator('#entry-form').waitFor();
  const info=await page.evaluate(()=>{const rect=el=>{const r=el.getBoundingClientRect();return {top:r.top,bottom:r.bottom,left:r.left,right:r.right,width:r.width,height:r.height}};const shell=rect(document.querySelector('.typing-shell'));return{shell,centerDelta:Math.abs((shell.top+shell.bottom)/2-innerHeight/2),student:rect(document.querySelector('[name=studentNumber]')),name:rect(document.querySelector('[name=name]')),overflow:document.documentElement.scrollWidth>innerWidth}});
- assert.equal(info.shell.width,660);assert(info.centerDelta<8);assert(info.name.top>info.student.bottom);assert.equal(info.student.width,360);assert.equal(info.overflow,false);
+ assert.equal(info.shell.width,460);assert(info.centerDelta<8);assert(info.name.top>info.student.bottom);assert.equal(info.student.width,412);assert(info.student.left-info.shell.left<=25);assert(info.shell.right-info.student.right<=25);assert.equal(info.overflow,false);
  assert.equal(await page.locator('#obyeol svg').getAttribute('viewBox'),'0 0 460 480');
  assert.equal(await page.locator('.status-chip, .intro-kicker, .inside-nav').count(),0);
  assert.equal(await page.locator('#obyeol-message').isVisible(),false);
