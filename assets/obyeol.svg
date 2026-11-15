@@ -3,9 +3,9 @@
   <desc id="desc">큰 별 얼굴과 가벼운 몸, 노란 손으로 웃고 있는 오별이</desc>
   <defs>
     <linearGradient id="head" x1="0" y1="0" x2=".85" y2="1">
-      <stop stop-color="#f9e38e" />
-      <stop offset=".58" stop-color="#f6d875" />
-      <stop offset="1" stop-color="#f9df83" />
+      <stop stop-color="#ffe99b" />
+      <stop offset=".58" stop-color="#ffdf82" />
+      <stop offset="1" stop-color="#ffe58f" />
     </linearGradient>
     <radialGradient id="cheek">
       <stop stop-color="#f08880" stop-opacity=".68" />

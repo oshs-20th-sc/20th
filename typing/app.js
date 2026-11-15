@@ -1,7 +1,7 @@
-import { mountObyeol } from './obyeol.js?v=obyeol-ui-v6';
-import { mountRecordCard } from './record-card.js?v=obyeol-ui-v6';
+import { mountObyeol } from './obyeol.js?v=typing-delete-v6-2';
+import { mountRecordCard } from './record-card.js?v=typing-delete-v6-2';
 import { getPublicDb, errorMessage } from '../db/firebase.js?v=ops-20261113';
-import { readEvent, readChallenge } from '../db/database.js?v=typing-fix-20261113';
+import { readEvent, readChallenge } from '../db/database.js?v=typing-delete-v6-2';
 import { mountLogin } from '../login.js?v=ops-20261113';
 import { downloadFile } from '../common.js?v=record-entry-1';
 import {
@@ -12,7 +12,7 @@ import {
   isComplete,
 } from './engine.js?v=typing-fix-20261113';
 import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=record-entry-1';
-import { saveResult } from './storage.js?v=typing-fix-20261113';
+import { saveResult } from './storage.js?v=typing-delete-v6-2';
 
 const elements = Object.fromEntries(
   [
@@ -30,8 +30,6 @@ const elements = Object.fromEntries(
     'retry',
     'rescue',
     'rescue-confirm',
-    'reference-keys',
-    'error-penalty',
   ].map((id) => [id, document.getElementById(id)]),
 );
 
@@ -92,8 +90,6 @@ function transition(next) {
 
 function showChallenge(current) {
   elements['challenge-title'].textContent = current.title;
-  elements['reference-keys'].textContent = current.referenceKeystrokes;
-  elements['error-penalty'].textContent = EVENT_ERROR_PENALTY;
   elements.challenge.setAttribute('aria-label', `입력할 문구: ${current.text}`);
   spans = Array.from(current.text, (character) => {
     const span = document.createElement('span');
@@ -107,16 +103,9 @@ function showChallenge(current) {
 function highlight(value) {
   const chars = Array.from(value);
   const target = Array.from((attempt ?? challenge)?.text ?? '');
-  const range = engine.composing ? engine.compositionRange : null;
-  const oldChars = Array.from(engine.committed);
-  const composingStart = range ? Array.from(engine.committed.slice(0, range.start)).length : oldChars.length;
-  const replacedEnd = range ? Array.from(engine.committed.slice(0, range.end)).length : oldChars.length;
-  const composingEnd = chars.length - (oldChars.length - replacedEnd);
   spans.forEach((span, index) => {
     span.className =
-      engine.composing && index >= composingStart && index < composingEnd
-        ? 'composing'
-        : index < chars.length
+      index < chars.length
         ? chars[index] === target[index]
           ? 'correct'
           : 'incorrect'

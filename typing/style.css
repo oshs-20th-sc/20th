@@ -33,8 +33,7 @@
 .challenge { position: relative; margin: 0 0 14px; padding: 16px 18px; min-height: 0; max-height: none; overflow: visible; border: 1px solid var(--line); border-radius: 12px; background: #fffefb; font-size: 18px; line-height: 1.9; white-space: pre-wrap; overflow-wrap: anywhere; }
 .challenge span { background: transparent; }
 .challenge .correct { color: #176841; }
-.challenge .incorrect { color: #b12d35; text-decoration: underline; text-decoration-thickness: 1.5px; text-underline-offset: 4px; }
-.challenge .composing { color: var(--ink); border-bottom: 2px dotted #916320; }
+.challenge .incorrect { color: #d32332; font-weight: 800; text-decoration: underline; text-decoration-thickness: 2px; text-underline-offset: 4px; }
 .challenge .cursor { border-bottom: 2px solid #916320; }
 .stage-panel label { margin: 0 0 7px; }
 #typing-input { font-size: 17px; line-height: 1.7; padding: 12px 15px; min-height: 96px; height: 112px; background: #fffefb; }
@@ -47,10 +46,6 @@
 .stage-panel .actions:has(> :not([hidden])) { padding-bottom: 4px; }
 .stage-panel .actions:not(:has(> :not([hidden]))) { display: none; }
 #retry, #show-record { background: #ffe3a0; }
-.rules-panel { border-top: 1px solid var(--line); margin-top: 16px; padding-top: 12px; }
-.rules-panel summary { font-size: 12px; color: #74664f; }
-.rules-panel ul { padding-left: 19px; margin: 12px 0 0; font-size: 12px; color: var(--muted); }
-.rules-panel li { margin: 6px 0; }
 .typing-page .inside-footer { margin-top: 14px; padding: 9px 0 0; font-size: 10px; }
 /* Keep Obyeol with the title, above the login and typing controls. */
 .mascot-aside { grid-column: 2; grid-row: 1; align-self: center; justify-self: end; width: 240px; display: flex; flex-direction: row-reverse; align-items: center; gap: 12px; padding: 0 0 12px; min-width: 0; }
@@ -172,7 +167,6 @@
   .metrics dd { font-size: 24px; }
   .challenge { font-size: 16px; line-height: 1.85; min-height: 0; max-height: none; margin-bottom: 12px; padding: 12px; }
   #typing-input { font-size: 16px; height: 102px; min-height: 86px; padding: 10px 12px; }
-  .rules-panel { margin-top: 13px; }
   .record-header { padding: 18px; }
   .record-header h2 { font-size: 25px; }
   .record-header p { font-size: 10px; }
@@ -208,3 +202,34 @@
 @media (prefers-reduced-motion: reduce) {
   .obyeol *, #record-dialog[open] { animation: none !important; transition: none !important; }
 }
+
+/* Compact controls make room for Obyeol without clipping the prompt. */
+.typing-page .container { padding-top: 16px; padding-bottom: 12px; }
+.typing-shell { grid-template-columns: minmax(0, 1fr) 260px; padding: 18px 22px 16px; }
+.typing-heading h1 { font-size: 28px; }
+.typing-heading > p:last-child { margin-top: 6px; font-size: 12px; }
+.has-participant .typing-heading { padding-bottom: 8px; }
+.mascot-aside { width: 260px; gap: 10px; padding-bottom: 8px; }
+.mascot-aside .obyeol { flex-basis: 144px; width: 144px; }
+#obyeol-message { flex: 0 1 106px; padding: 5px 7px; font-size: 11px; line-height: 1.45; }
+.typing-page:not(.has-participant) .mascot-aside { width: 120px; }
+.typing-page:not(.has-participant) .mascot-aside .obyeol { flex-basis: 120px; width: 120px; }
+.typing-page:not(.has-participant) #obyeol-message,
+.typing-page:not(.has-participant) .inside-footer { display: none; }
+.typing-page #login .login-panel { max-width: 360px; padding-bottom: 8px; }
+.typing-page .login-panel h2 { font-size: 20px; margin-bottom: 12px; }
+.typing-page .login-panel input { min-height: 43px; padding-block: 9px; }
+.typing-page .login-panel button[type='submit'] { min-height: 43px; margin-top: 16px; }
+.typing-page #student-session { min-height: 40px; margin-bottom: 10px; padding: 5px 10px; }
+.metrics { margin: 10px 0; gap: 8px; }
+.metrics > div { padding: 7px 12px; }
+.metrics dd { font-size: 25px; margin-top: 3px; }
+.challenge { margin-bottom: 10px; padding: 12px 15px; font-size: 17px; line-height: 1.8; }
+.stage-panel label { margin-bottom: 5px; font-size: 12px; }
+#typing-input { height: 84px; min-height: 84px; padding: 10px 13px; font-size: 16px; }
+.has-participant #typing-input { height: 84px; min-height: 84px; }
+.typing-page .inside-footer { margin-top: 10px; padding-top: 7px; }
+.metrics dt { font-size: 11px; }
+.metrics > div { padding-block: 6px; }
+.metrics dd { font-size: 24px; line-height: 1.2; }
+.typing-page #student-session button { min-height: 30px; padding: 3px 9px; }

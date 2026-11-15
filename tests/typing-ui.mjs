@@ -26,7 +26,6 @@ import { CHALLENGE } from '/typing/challenge.js';
 import { countKeystrokes } from '/typing/scoring.js';
 export const readEvent = async () => ({activeChallengeId:CHALLENGE.challengeId,phase:'A'});
 export const readChallenge = async () => {const text=window.__challengeText || CHALLENGE.text;return {...CHALLENGE,text,referenceKeystrokes:countKeystrokes(text)}};
-export const diagnoseTypingSubmission=async()=>({kind:'rules_rejection_unresolved'});
 export const validateTypingResult = value => value;
 export async function submitTyping(db, participant, record) {
   window.__submitted.push(structuredClone(record));
@@ -102,8 +101,8 @@ try {
     await login(page);
     await ime(page,'ㄱ');
     assert.equal(await page.locator('#errors').textContent(),'0');
-    assert.equal(await page.locator('#challenge .incorrect').count(),0);
-    assert.equal(await page.locator('#challenge .composing').count(),1);
+    assert.equal(await page.locator('#challenge .incorrect').count(),1);
+    assert.equal(await page.locator('#challenge .composing').count(),0);
     assert.equal(await page.locator('#obyeol').getAttribute('data-mood'),'idle');
     await page.locator('#typing-input').evaluate(input => {input.value='가';input.setSelectionRange(1,1);});
     await endIme(page,'가');

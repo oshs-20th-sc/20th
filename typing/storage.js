@@ -1,10 +1,9 @@
 import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js?v=ops-20261113';
 import {
-  diagnoseTypingSubmission,
   submitTyping,
   readChallenge,
   validateTypingResult,
-} from '../db/database.js?v=typing-fix-20261113';
+} from '../db/database.js?v=typing-delete-v6-2';
 
 import { toCsv, validateParticipant } from '../common.js?v=record-entry-1';
 import { rankResults, rankedAttempts } from './scoring.js?v=record-entry-1';
@@ -196,28 +195,6 @@ export async function importResultFile(input) {
 
 export async function pendingResults() {
   return (await listLocalResults()).filter((result) => result.syncState !== 'synced');
-}
-
-export async function diagnosePendingResults() {
-  const { db } = await adminContext();
-  const pending = await pendingResults();
-  const limit = 50;
-  const diagnostics = [];
-  for (let offset = 0; offset < Math.min(pending.length, limit); offset += 5) {
-    const batch = pending.slice(offset, offset + 5);
-    diagnostics.push(...await Promise.all(batch.map(async (result) => {
-      try {
-        return { id: result.id, ...await diagnoseTypingSubmission(db, result) };
-      } catch (error) {
-        return { id: result.id, kind: 'read_failed', reason: firebaseError(error).message };
-      }
-    })));
-  }
-  return {
-    total: pending.length,
-    diagnostics,
-    omitted: Math.max(0, pending.length - diagnostics.length),
-  };
 }
 
 export async function synchronizePending() {

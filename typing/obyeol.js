@@ -2,9 +2,9 @@
 const artwork = `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 460 480" role="img" aria-label="학교 마스코트 오별이">
   <defs>
     <linearGradient id="__ID__-head" x1="0" y1="0" x2=".85" y2="1">
-      <stop stop-color="#f9e38e" />
-      <stop offset=".58" stop-color="#f6d875" />
-      <stop offset="1" stop-color="#f9df83" />
+      <stop stop-color="#ffe99b" />
+      <stop offset=".58" stop-color="#ffdf82" />
+      <stop offset="1" stop-color="#ffe58f" />
     </linearGradient>
     <radialGradient id="__ID__-cheek">
       <stop stop-color="#f08880" stop-opacity=".68" />

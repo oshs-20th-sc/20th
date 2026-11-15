@@ -43,7 +43,7 @@ export async function payloadHash(payload) {
 function receiptConflict(kind) {
   return new ClientError(
     kind === 'typing'
-      ? '서버가 타자 기록 접수를 거부했습니다. 같은 학번의 공식 참여 키가 이미 사용됐거나 문구·점수·접수 규칙과 맞지 않을 수 있습니다. 연결된 기록이 삭제되어도 중복 제한은 유지되니 운영진에게 확인해 주세요.'
+      ? '서버가 타자 기록 접수를 거부했습니다. 같은 학번의 공식 참여 기록이 이미 있거나 문구·점수·접수 규칙과 맞지 않을 수 있습니다. 운영진에게 확인해 주세요.'
       : '행사 접수가 마감되었거나 이미 처리된 요청입니다. 접수 상태를 확인해 주세요.',
     409,
     kind === 'typing' ? 'TYPING_REJECTED' : 'DUPLICATE_OR_CLOSED',
@@ -186,89 +186,6 @@ export function validateTypingResult(input, challenge = CHALLENGE) {
   );
   if (input.speed !== computed.speed || input.score !== computed.score)
     throw new ClientError('타수와 최종 점수 계산이 일치하지 않습니다.', 400, 'INVALID_SCORE');
-}
-
-// Read-only diagnosis for an administrator investigating a device backup.
-// It deliberately uses the same private claim path as submission; student
-// clients never receive permission to inspect whether another student number
-// has already used its one-time entry.
-export async function diagnoseTypingSubmission(db, input) {
-  if (input?.entry_mode !== 'record' && input?.entryMode !== 'record')
-    return { kind: 'not_record_entry' };
-  if (!UUID_PATTERN.test(input.id ?? '')) return { kind: 'invalid_local_id' };
-  const identity = validateParticipant({
-    studentNumber: input.participantId,
-    name: input.displayName,
-  });
-  if (!identity.value) return { kind: 'invalid_local_identity' };
-
-  const [receipt, claim] = await Promise.all([
-    withDeadline(getDoc(doc(db, 'receipts', input.id))),
-    withDeadline(getDoc(doc(
-      db,
-      'receipts',
-      `${OFFICIAL_CLAIM_PREFIX}${identity.value.studentNumber}`,
-    ))),
-  ]);
-
-  const payload = {
-    id: input.id,
-    entry_mode: 'record',
-    owner_uid: null,
-    participantId: identity.value.studentNumber,
-    displayName: identity.value.name,
-    challengeId: input.challengeId,
-    elapsedMs: input.elapsedMs,
-    speed: input.speed,
-    errors: input.errors,
-    score: input.score,
-    completedAt: input.completedAt,
-    practice: false,
-    prizeReceived: false,
-    verificationStatus: 'pending',
-    reviewed_at: null,
-  };
-
-  if (receipt.exists()) {
-    const data = receipt.data();
-    const matches = data.entry_mode === 'record' && data.kind === 'typing' &&
-      data.payload_hash === await payloadHash(payload);
-    if (!matches) return { kind: 'receipt_mismatch' };
-    const saved = await withDeadline(getDoc(doc(db, 'typingResults', input.id)));
-    return { kind: saved.exists() ? 'already_saved' : 'receipt_without_result' };
-  }
-
-  if (claim.exists()) {
-    const data = claim.data();
-    if (data.kind !== 'typingEntry' ||
-        data.student_number !== identity.value.studentNumber ||
-        !UUID_PATTERN.test(data.result_id ?? ''))
-      return { kind: 'claim_inconsistent' };
-    const saved = await withDeadline(getDoc(doc(db, 'typingResults', data.result_id)));
-    return {
-      kind: data.result_id === input.id ? 'claim_points_here' : 'claim_used',
-      resultExists: saved.exists(),
-    };
-  }
-
-  const [event, challenge] = await Promise.all([
-    readEvent(db),
-    readChallenge(db, input.challengeId),
-  ]);
-  if (event.activeChallengeId !== input.challengeId)
-    return { kind: 'challenge_changed' };
-  if (!challenge.enabled || challenge.deleted) return { kind: 'challenge_unavailable' };
-  if (countKeystrokes(challenge.text) !== challenge.referenceKeystrokes)
-    return { kind: 'challenge_reference_mismatch' };
-  try {
-    validateTypingResult(payload, challenge);
-  } catch (reason) {
-    return { kind: 'invalid_payload', reason: reason?.message || '기록 검증에 실패했습니다.' };
-  }
-  // No receipt, no official claim, and no current challenge/score mismatch.
-  // The original rejection can no longer be attributed more narrowly without
-  // server-side logs or the state that existed at failure time.
-  return { kind: 'rules_rejection_unresolved' };
 }
 
 export async function submitTyping(db, participant, result, { asAdmin = false } = {}) {
@@ -1024,7 +941,72 @@ export async function deleteChallenge(db, id) {
   await withDeadline(deleteDoc(doc(db, 'challenges', id)));
 }
 export async function deleteTyping(db, id) {
-  await withDeadline(deleteDoc(doc(db, 'typingResults', id)));
+  if (!UUID_PATTERN.test(id ?? '')) throw new ClientError('기록 ID가 올바르지 않습니다.', 400);
+  try {
+    return await withDeadline(runTransaction(db, async (tx) => {
+      const resultRef = doc(db, 'typingResults', id);
+      const receiptRef = doc(db, 'receipts', id);
+      const [result, receipt] = await Promise.all([tx.get(resultRef), tx.get(receiptRef)]);
+      if (!result.exists()) return { id, deleted: false, replayed: true };
+
+      const data = result.data();
+      const officialRecord = data.entry_mode === 'record' && data.practice === false;
+      const typingReceipt = receipt.exists() && receipt.data().kind === 'typing' &&
+        (data.entry_mode !== 'record' || receipt.data().entry_mode === 'record');
+      if (data.entry_mode === 'record' && receipt.exists() && !typingReceipt)
+        throw new ClientError('기록 접수 정보가 일치하지 않아 삭제하지 않았습니다.', 409, 'RECEIPT_MISMATCH');
+
+      let claimRef = null;
+      let claim = null;
+      if (officialRecord && /^[1-3][0-9]{4}$/.test(data.participantId ?? '')) {
+        claimRef = doc(db, 'receipts', `${OFFICIAL_CLAIM_PREFIX}${data.participantId}`);
+        claim = await tx.get(claimRef);
+      }
+
+      tx.delete(resultRef);
+      if (typingReceipt) tx.delete(receiptRef);
+      const claimData = claim?.exists() ? claim.data() : null;
+      const releasedParticipation = !!claimData && claimData.kind === 'typingEntry' &&
+        claimData.student_number === data.participantId && claimData.result_id === id;
+      if (releasedParticipation) tx.delete(claimRef);
+      return { id, deleted: true, releasedParticipation };
+    }));
+  } catch (error) {
+    if (error?.code === 'permission-denied')
+      throw new ClientError(
+        '기록 삭제가 거부되었습니다. 서버 삭제 규칙이 아직 적용되지 않았거나 관리자 권한이 부족할 수 있습니다. 기록은 삭제되지 않았습니다.',
+        403,
+        'TYPING_DELETE_REJECTED',
+      );
+    throw error;
+  }
+}
+
+// An administrator can repair only a claim whose exact referenced result is
+// already absent. The claim and any matching UUID receipt are removed together.
+export async function releaseOrphanedTypingClaim(db, studentNumber, expectedResultId) {
+  if (!/^[1-3][0-9]{4}$/.test(studentNumber ?? '') || !UUID_PATTERN.test(expectedResultId ?? ''))
+    throw new ClientError('참가 학번 또는 기록 ID를 확인하세요.', 400);
+  return withDeadline(runTransaction(db, async (tx) => {
+    const claimRef = doc(db, 'receipts', `${OFFICIAL_CLAIM_PREFIX}${studentNumber}`);
+    const resultRef = doc(db, 'typingResults', expectedResultId);
+    const receiptRef = doc(db, 'receipts', expectedResultId);
+    const [claim, result, receipt] = await Promise.all([
+      tx.get(claimRef), tx.get(resultRef), tx.get(receiptRef),
+    ]);
+    if (!claim.exists()) return { released: false, reason: 'claim_missing' };
+    const data = claim.data();
+    if (data.kind !== 'typingEntry' || data.student_number !== studentNumber ||
+        data.result_id !== expectedResultId)
+      return { released: false, reason: 'claim_changed' };
+    if (result.exists()) return { released: false, reason: 'result_exists' };
+    if (receipt.exists() && (receipt.data().entry_mode !== 'record' || receipt.data().kind !== 'typing'))
+      return { released: false, reason: 'receipt_mismatch' };
+
+    tx.delete(claimRef);
+    if (receipt.exists()) tx.delete(receiptRef);
+    return { released: true, resultId: expectedResultId };
+  }));
 }
 export function encodeFirestore(value) {
   if (value instanceof Timestamp)

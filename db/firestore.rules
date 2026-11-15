@@ -5,7 +5,7 @@
 // letters/{UUID}: legacy UID rows or E-mode private original + public edit/status/order; student identity is never projected.
 // publicLetters/{UUID}: id, nickname, content, order, sort_order; sanitized approved projection only.
 // typingResults/{UUID}: legacy UID rows or E-mode private school number/name, score, verification and prize state.
-// receipts/{UUID}: immutable receipt metadata; official-20261123-{school5} records are private one-time claims.
+// receipts/{UUID}: typing/letter receipt metadata; official-20261123-{school5} are private one-time claims released only with their deleted result.
 // settings/sessionPolicy: boothMode bool, idleMinutes int(1..120), updated_at.
 // letterTrash/{UUID}: private original letter snapshot, trashed_at/by, last_history_id UUID.
 // letterLogs/{UUID[-restore|-purge]}: letter_id, operator_uid, action, before/after snapshots,
@@ -54,6 +54,34 @@ service cloud.firestore {
         && target.entry_mode == 'record' && target.owner_uid == null && targetTimestamp == request.time;
     }
     function officialClaimId(number) { return 'official-20261123-' + number; }
+    function exactOfficialClaim(id, data) {
+      let number = data.get('participantId', '');
+      let path = /databases/$(database)/documents/receipts/$(officialClaimId(number));
+      return participantNumber(number) && exists(path)
+        && get(path).data.kind == 'typingEntry'
+        && get(path).data.student_number == number
+        && get(path).data.result_id == id;
+    }
+    function typingResultDeleteReady(id, data) {
+      let receiptPath = /databases/$(database)/documents/receipts/$(id);
+      let claimPath = /databases/$(database)/documents/receipts/$(officialClaimId(data.get('participantId', '')));
+      return data.get('entry_mode', '') != 'record'
+        ? (!exists(receiptPath) || get(receiptPath).data.get('kind', '') != 'typing' || !existsAfter(receiptPath))
+        : (!existsAfter(receiptPath)
+          && (data.get('practice', false) || !exactOfficialClaim(id, data) || !existsAfter(claimPath)));
+    }
+    function typingReceiptDeleteReady(id, data) {
+      return uuid(id) && data.kind == 'typing'
+        && !existsAfter(/databases/$(database)/documents/typingResults/$(id));
+    }
+    function officialClaimDeleteReady(id, data) {
+      let resultPath = /databases/$(database)/documents/typingResults/$(data.get('result_id', id));
+      let receiptPath = /databases/$(database)/documents/receipts/$(data.get('result_id', id));
+      return participantNumber(data.get('student_number', ''))
+        && id == officialClaimId(data.student_number) && data.kind == 'typingEntry'
+        && uuid(data.get('result_id', ''))
+        && !existsAfter(resultPath) && !existsAfter(receiptPath);
+    }
     function officialClaimReady(id, data) {
       let path = /databases/$(database)/documents/receipts/$(officialClaimId(data.participantId));
       let claim = getAfter(path).data;
@@ -189,7 +217,10 @@ service cloud.firestore {
         && targetExists(request.resource.data))
         || validOfficialClaim(id, request.resource.data, true) && (admin() || !signedIn());
       allow list: if admin();
-      allow update, delete: if false;
+      allow update: if false;
+      // Admin-only cleanup for typing UUID receipts and exact one-time claims.
+      allow delete: if admin() && (typingReceiptDeleteReady(id, resource.data)
+        || officialClaimDeleteReady(id, resource.data));
     }
     function historyId(value) {
       return value is string && value.matches('[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-restore|-purge)?');
@@ -417,7 +448,7 @@ service cloud.firestore {
       allow update: if admin() && valid(request.resource.data)
         && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['prizeReceived', 'verificationStatus', 'reviewed_at'])
         && request.resource.data.reviewed_at == request.time;
-      allow delete: if admin();
+      allow delete: if admin() && typingResultDeleteReady(id, resource.data);
     }
     match /{document=**} { allow read, write: if false; }
   }
