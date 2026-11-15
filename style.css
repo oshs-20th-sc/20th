@@ -277,9 +277,3 @@ summary { font-weight: 750; cursor: pointer; }
 /* V5: practical login form remains the main target after the banner. */
 .typing-page #login { width: min(100%, 760px); margin: 0 auto; }
 .typing-page #login .login-panel { max-width: none; margin: 0; }
-@media (min-width: 700px) {
-  .typing-page #entry-form { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 0 18px; }
-  .typing-page #entry-form > label { min-width: 0; }
-  .typing-page #entry-form > button[type="submit"] { grid-column: 1 / -1; }
-  .typing-page #entry-form > #login-error { grid-column: 1 / -1; }
-}

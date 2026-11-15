@@ -10,7 +10,7 @@
 .typing-page #login .login-panel { background: transparent; padding: 10px 0 14px; margin: 0; border: 0; box-shadow: none; }
 .typing-page .login-panel h2 { font-size: 21px; margin-bottom: 18px; }
 .typing-page .login-panel button[type='submit'] { margin-top: 20px; }
-.typing-page #entry-form { gap: 0 16px; }
+.typing-page #entry-form { display: block; }
 .typing-page #student-session { margin: 0 0 18px; padding: 10px 12px; min-height: 53px; background: #fff4d8; border-color: var(--line); gap: 8px; }
 #student-name { font-weight: 750; font-size: 14px; overflow-wrap: anywhere; min-width: 0; }
 #student-session button { min-height: 34px; padding: 5px 11px; font-size: 12px; flex-shrink: 0; }
