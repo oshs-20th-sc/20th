@@ -89,7 +89,7 @@ await page.waitForFunction(()=>document.querySelector('#record-save-status').dat
 const failure=await page.locator('#record-save-status').textContent();assert(failure.includes('같은 학번'));assert(failure.includes('기기에 보관'));assert(!failure.includes('저장되었어요'));
 await page.locator('#record-return').click();await page.waitForFunction(()=>document.activeElement.id==='retry');assert(await page.locator('#retry').isVisible());
 await page.screenshot({path:`${out}/save-rejection-desktop.png`,animations:'disabled'});
-// Writing retains its form behavior while fitting a desktop viewport.
+// Writing keeps comfortable controls and a generous textarea, without excess sections.
 const writing=await browser.newPage({viewport:{width:1366,height:768}});
 writing.on('pageerror',error=>{throw error});
 await writing.route('**/db/firebase.js*',r=>r.fulfill({contentType:'text/javascript',body:firebase}));
@@ -98,9 +98,13 @@ await writing.route('**/db/database.js*',r=>r.fulfill({contentType:'text/javascr
 await writing.goto('http://127.0.0.1:5176/write/');await writing.locator('#submit:not(:disabled)').waitFor();
 assert.equal(await writing.locator('#student-number').getAttribute('placeholder'),'학번');
 await writing.locator('#content').fill('안녕하세요');await writing.waitForFunction(()=>document.querySelector('#content-count').textContent==='5자');
-assert(await writing.evaluate(()=>document.documentElement.scrollHeight<=innerHeight));
+const writeLayout=await writing.evaluate(()=>({height:document.documentElement.scrollHeight,overflow:document.documentElement.scrollWidth>innerWidth,input:document.querySelector('#student-number').getBoundingClientRect().height,textarea:document.querySelector('#content').getBoundingClientRect().height}));
+assert.equal(writeLayout.overflow,false);assert(writeLayout.input>=47);assert(writeLayout.textarea>=220);assert(writeLayout.height<960);
+assert.equal(await writing.locator('.inside-footer, .form-panel-heading').count(),0);
+await writing.screenshot({path:`${out}/comfortable-writing-desktop.png`,fullPage:true,animations:'disabled'});
+await writing.setViewportSize({width:1710,height:1060});
 assert(await writing.locator('#submit').evaluate(el=>el.getBoundingClientRect().bottom<innerHeight));
-await writing.screenshot({path:`${out}/compact-writing-desktop.png`,animations:'disabled'});
+await writing.screenshot({path:`${out}/comfortable-writing-large-desktop.png`,animations:'disabled'});
 await writing.close();
 // Review all expressions together using the exact animated SVG markup and CSS.
 await page.setContent(`<head><link rel="stylesheet" href="http://127.0.0.1:5176/style.css"><link rel="stylesheet" href="http://127.0.0.1:5176/typing/style.css"></head><body style="background:#fffaf0;padding:32px;display:flex;gap:16px"><div id="gallery" style="display:flex;gap:16px;width:1280px;height:250px"></div></body>`);

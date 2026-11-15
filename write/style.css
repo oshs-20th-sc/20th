@@ -1,22 +1,21 @@
-/* Preserve the writing cards while removing duplicate space around the form. */
-.write-page .container { padding: 12px 0 16px; }
-.write-page .inside-nav { margin-bottom: 8px; }
-.write-page .inside-brand { font-size: 11px; }
-.write-page .page-intro { min-height: 112px; margin-bottom: 12px; padding: 13px 23px; }
-.write-page .page-intro h1 { font-size: 32px; }
-.write-page .page-intro-copy > p:last-of-type { font-size: 12px; line-height: 1.6; margin-top: 6px; }
-.write-page .page-mascot { flex-basis: 108px; height: 94px; }
-.write-page .page-mascot img { width: 98px; bottom: -5px; right: 3px; }
-.write-page .form-panel { margin: 0; padding: 18px 22px; }
-.write-page label { margin: 10px 0 5px; font-size: 12px; }
+/* Remove duplicate sections, while keeping the writing form comfortable. */
+.write-page .container { padding: 18px 0 24px; }
+.write-page .inside-nav { margin-bottom: 12px; }
+.write-page .page-intro { min-height: 146px; margin-bottom: 18px; padding: 20px 30px; }
+.write-page .page-intro h1 { font-size: 40px; }
+.write-page .page-intro-copy > p:last-of-type { font-size: 14px; line-height: 1.7; margin-top: 8px; }
+.write-page .page-mascot { flex-basis: 140px; height: 110px; }
+.write-page .page-mascot img { width: 120px; bottom: -7px; right: 3px; }
+.write-page .form-panel { margin: 0; padding: 26px 30px; }
+.write-page label { margin: 16px 0 7px; font-size: 14px; }
 .write-page .form-grid label { margin-top: 0; }
-.write-page input { min-height: 40px; padding: 8px 11px; }
-.write-page .form-panel textarea { min-height: 132px; height: 132px; padding: 10px 12px; font-size: 14px; line-height: 1.7; }
+.write-page input { min-height: 48px; padding: 11px 13px; font-size: 15px; }
+.write-page .form-panel textarea { min-height: 224px; height: 224px; padding: 14px 15px; font-size: 16px; line-height: 1.8; }
 .write-page .form-panel #nickname-help,
-.write-page .form-panel #content-count { font-size: 11px; margin-top: 4px; margin-bottom: 0; }
-.write-page .form-panel #privacy { font-size: 11px; margin: 6px 0 10px; }
-.write-page .consent-check { min-height: 37px; padding: 7px 10px; margin: 0; }
+.write-page .form-panel #content-count { font-size: 12px; margin-top: 6px; margin-bottom: 0; }
+.write-page .form-panel #privacy { font-size: 12px; margin: 10px 0 14px; }
+.write-page .consent-check { min-height: 46px; padding: 11px 14px; margin: 0; }
 .write-page .consent-check input { min-height: 0; }
-.write-page .actions { margin: 12px 0 0; }
-.write-page button { min-height: 37px; padding: 7px 13px; }
-.write-page .form-panel button.primary { min-width: 120px; }
+.write-page .actions { margin: 18px 0 0; }
+.write-page button { min-height: 45px; padding: 10px 16px; font-size: 14px; }
+.write-page .form-panel button.primary { min-width: 144px; }
