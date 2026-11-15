@@ -1,4 +1,10 @@
 /*
+!/assets/
+!/assets/**
+!/tests/
+!/tests/**
+!/docs/
+!/docs/**
 !/typing/
 !/typing/**
 !/write/

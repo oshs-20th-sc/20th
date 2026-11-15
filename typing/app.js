@@ -1,3 +1,5 @@
+import { mountObyeol } from './obyeol.js?v=obyeol-ui-v6';
+import { mountRecordCard } from './record-card.js?v=obyeol-ui-v6';
 import { getPublicDb, errorMessage } from '../db/firebase.js?v=ops-20261113';
 import { readEvent, readChallenge } from '../db/database.js?v=typing-fix-20261113';
 import { mountLogin } from '../login.js?v=ops-20261113';
@@ -32,6 +34,9 @@ const elements = Object.fromEntries(
     'error-penalty',
   ].map((id) => [id, document.getElementById(id)]),
 );
+
+const obyeol = mountObyeol(document.getElementById('obyeol'), document.getElementById('obyeol-message'));
+const recordCard = mountRecordCard();
 
 let config = null;
 let challenge = null;
@@ -81,6 +86,7 @@ function transition(next) {
     timer = null;
   }
   updateControls();
+  recordCard.status(next, needsBackup, filePrepared);
 }
 
 function showChallenge(current) {
@@ -100,9 +106,16 @@ function showChallenge(current) {
 function highlight(value) {
   const chars = Array.from(value);
   const target = Array.from((attempt ?? challenge)?.text ?? '');
+  const range = engine.composing ? engine.compositionRange : null;
+  const oldChars = Array.from(engine.committed);
+  const composingStart = range ? Array.from(engine.committed.slice(0, range.start)).length : oldChars.length;
+  const replacedEnd = range ? Array.from(engine.committed.slice(0, range.end)).length : oldChars.length;
+  const composingEnd = chars.length - (oldChars.length - replacedEnd);
   spans.forEach((span, index) => {
     span.className =
-      index < chars.length
+      engine.composing && index >= composingStart && index < composingEnd
+        ? 'composing'
+        : index < chars.length
         ? chars[index] === target[index]
           ? 'correct'
           : 'incorrect'
@@ -110,6 +123,14 @@ function highlight(value) {
           ? 'cursor'
           : '';
   });
+  // Follow long prompts inside their own panel without scrolling the page or input.
+  const cursor = spans[Math.min(chars.length, spans.length - 1)];
+  const panel = elements.challenge;
+  if (cursor && panel.scrollHeight > panel.clientHeight) {
+    const top = cursor.offsetTop;
+    if (top < panel.scrollTop || top + cursor.offsetHeight > panel.scrollTop + panel.clientHeight)
+      panel.scrollTop = Math.max(0, top - panel.clientHeight / 2);
+  }
 }
 
 function eventStatus() {
@@ -189,9 +210,11 @@ async function persist(record) {
 function process(value, endedComposition = false, edit) {
   if (!['armed', 'running'].includes(status) || !attempt) return;
   if (value.length) beginTiming();
+  const previousEngine = engine;
   engine = endedComposition
     ? compositionEnd(engine, value, attempt.text)
     : commitInput(engine, value, attempt.text, edit);
+  obyeol.react(previousEngine, engine, edit);
   elements.errors.textContent = engine.errors;
   highlight(value);
   message(`입력 ${Array.from(value).length} / ${Array.from(attempt.text).length}자`);
@@ -220,11 +243,15 @@ function process(value, endedComposition = false, edit) {
   elements.score.textContent = result.score;
   elements.result.textContent = `${result.speed}타/분 · 오타 ${result.errors}회 · ${result.score}점`;
   elements.result.hidden = false;
+  // Start the existing save flow before opening presentation UI.
   void persist(result);
+  obyeol.complete();
+  recordCard.show(result);
 }
 
 function invalidate(reason) {
   if (!['armed', 'running'].includes(status)) return;
+  obyeol.pause();
   transition('invalid');
   message(reason, true);
 }
@@ -241,6 +268,8 @@ async function prepareAttempt() {
     startedAt = null;
     elapsed = 0;
     result = null;
+    obyeol.reset();
+    recordCard.reset();
     elements['typing-input'].value = '';
     elements.elapsed.textContent = '0.0';
     elements.errors.textContent = '0';
@@ -343,8 +372,12 @@ elements['rescue-confirm'].addEventListener('click', () => {
   needsBackup = false;
   updateControls();
   message('저장한 기록 파일을 운영진에게 전달하세요.');
+  recordCard.status(status, needsBackup, filePrepared);
 });
 function clearAttempt() {
+  obyeol.reset();
+  recordCard.reset();
+  document.body.classList.remove('has-participant');
   pendingEdit = null;
   deletionKey = '';
   attempt = null;
@@ -369,6 +402,7 @@ const login = mountLogin({
     const entering = !participant || participant.sessionId !== student.sessionId;
     if (entering) sessionVersion++;
     participant = student;
+    document.body.classList.add('has-participant');
     document.querySelector('#student-view').hidden = false;
     updateControls();
     if (entering) void prepareAttempt();

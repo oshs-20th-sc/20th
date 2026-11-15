@@ -1,13 +1,45 @@
 <!doctype html>
 <html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>20th</title>
-  </head>
-
-  <body>
-    <h1><a href="./typing/">타자 대회</a></h1>
-    <h1><a href="./write/">글쓰기</a></h1>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#ffdf87" />
+  <meta name="description" content="천안오성고등학교 20대 학생회 행사 페이지" />
+  <title>학생회 행사 | 천안오성고등학교 20대 학생회</title>
+  <link rel="stylesheet" href="./style.css?v=obyeol-ui-v6" />
+</head>
+<body class="home-page">
+  <div class="site-shell">
+    <header class="site-nav">
+      <a class="wordmark" href="./">20대 학생회</a>
+      <nav class="nav-links" aria-label="행사 메뉴">
+        <a href="./typing/">타자 대회</a>
+        <a href="./write/">글쓰기</a>
+              </nav>
+    </header>
+    <main>
+      <section class="home-hero" aria-labelledby="home-title">
+        <div class="home-hero-copy">
+          <p class="overline">천안오성고등학교 · 20대 학생회</p>
+          <h1 id="home-title">학생회 <span>행사</span></h1>
+          <p class="home-intro">참여할 행사를 선택해 주세요.</p>
+        </div>
+        <div class="home-mascot"><img src="./assets/obyeol.svg" alt="오별이" width="460" height="510" /></div>
+      </section>
+      <section class="home-events" aria-label="행사 메뉴">
+        <a href="./typing/" class="event-card event-card--typing">
+          <div class="event-number">01 <span>행사</span></div>
+          <div class="event-visual event-visual--typing" aria-hidden="true"><span class="visual-keyboard"><i>ㄱ</i><i>ㅏ</i><i>나</i><i>↵</i></span></div>
+          <div class="event-detail"><div><h2>타자 대회</h2><p>학번과 이름을 입력하고 타자 기록을 측정합니다.</p></div><span class="event-arrow" aria-hidden="true">↗</span></div>
+        </a>
+        <a href="./write/" class="event-card event-card--write">
+          <div class="event-number">02 <span>참여</span></div>
+          <div class="event-visual event-visual--write" aria-hidden="true"><div class="visual-letter"><span>✎</span></div></div>
+          <div class="event-detail"><div><h2>글쓰기</h2><p>전하고 싶은 글을 작성해 제출합니다.</p></div><span class="event-arrow" aria-hidden="true">↗</span></div>
+        </a>
+      </section>
+    </main>
+    <footer class="site-footer">천안오성고등학교 · 20대 학생회</footer>
+  </div>
+</body>
 </html>
