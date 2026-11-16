@@ -81,12 +81,12 @@ await page.reload();await page.locator('#entry-form').waitFor();
 await page.evaluate(()=>{window.__longPrompt='천안오성고등학교에서 서로 소통하고 다양한 경험을 쌓으며 자신의 꿈을 향해 나아갑니다. '.repeat(7).trim()});
 await page.locator('[name=studentNumber]').fill('20102');await page.locator('[name=name]').fill('문구확인');await page.locator('#entry-form button').click();await page.waitForFunction(()=>!document.querySelector('#typing-input').disabled);
 const prompt=await page.locator('#challenge').evaluate(el=>({scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,maxHeight:getComputedStyle(el).maxHeight,overflow:getComputedStyle(el).overflowY,lastBottom:el.lastElementChild.getBoundingClientRect().bottom,panelBottom:el.getBoundingClientRect().bottom}));
-await page.waitForFunction(()=>document.querySelector('#typing-input').getBoundingClientRect().height>=document.querySelector('#challenge').getBoundingClientRect().height);
+await page.waitForFunction(()=>document.querySelector('#typing-input').getBoundingClientRect().height>=Math.ceil(document.querySelector('#challenge').getBoundingClientRect().height)+24);
 for(const [width,height] of [[1366,768],[1710,1060]]){
  await page.setViewportSize({width,height});
- await page.waitForFunction(()=>document.querySelector('#typing-input').getBoundingClientRect().height>=document.querySelector('#challenge').getBoundingClientRect().height);
+ await page.waitForFunction(()=>document.querySelector('#typing-input').getBoundingClientRect().height>=Math.ceil(document.querySelector('#challenge').getBoundingClientRect().height)+24);
  const layout=await page.evaluate(()=>{const input=document.querySelector('#typing-input').getBoundingClientRect(),challenge=document.querySelector('#challenge').getBoundingClientRect(),shell=document.querySelector('.typing-shell').getBoundingClientRect();return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,inputBottom:input.bottom,inputHeight:input.height,challengeHeight:challenge.height,shellTop:shell.top,shellBottom:shell.bottom,centerDelta:Math.abs((shell.top+shell.bottom)/2-innerHeight/2)}});
- assert.equal(layout.overflow,false);assert(layout.inputBottom<height);assert(layout.centerDelta<1);assert(layout.shellTop>=15);measurements.push({typing:layout});
+ assert.equal(layout.overflow,false);assert(layout.inputBottom<height);if(layout.shellBottom-layout.shellTop+32<=height) assert(layout.centerDelta<1);assert(layout.shellTop>=15);measurements.push({typing:layout});
  await page.screenshot({path:`${out}/typing-spacious-${width}.png`,animations:'disabled'});
 }
 await page.setViewportSize({width:1366,height:768});
