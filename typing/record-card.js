@@ -61,9 +61,12 @@ export function mountRecordCard() {
       if (!record) return;
       state = next;
       saveStatus.dataset.state = next;
+      saveStatus.hidden = next === 'saved';
+      if (next === 'saved') dialog.removeAttribute('aria-describedby');
+      else dialog.setAttribute('aria-describedby', 'record-save-status');
       saveStatus.textContent = {
         saving: '서버에 기록을 저장하고 있어요.',
-        saved: '기록이 저장됐어요!',
+        saved: '',
         failed: needsBackup
           ? '서버 저장과 기기 보관에 실패했어요. 기록 화면에서 파일로 저장해 주세요.'
           : filePrepared

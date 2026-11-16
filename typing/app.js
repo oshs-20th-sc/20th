@@ -1,5 +1,5 @@
 import { mountObyeol } from './obyeol.js?v=typing-certificate-1';
-import { mountRecordCard } from './record-card.js?v=typing-certificate-1';
+import { mountRecordCard } from './record-card.js?v=typing-layout-2';
 import { getPublicDb, errorMessage } from '../db/firebase.js?v=typing-certificate-1';
 import { readEvent, readChallenge, readTypingCertificate } from '../db/database.js?v=typing-certificate-1';
 import { mountLogin } from '../login.js?v=typing-certificate-1';
@@ -35,6 +35,13 @@ const elements = Object.fromEntries(
 
 const obyeol = mountObyeol(document.getElementById('obyeol'), document.getElementById('obyeol-message'));
 const recordCard = mountRecordCard();
+
+// Match the prompt after wrapping or a resize, without measuring on every input.
+const promptSize = new ResizeObserver(([entry]) => {
+  const height = entry.borderBoxSize?.[0]?.blockSize ?? elements.challenge.getBoundingClientRect().height;
+  if (height > 0) elements.challenge.closest('.stage-panel').style.setProperty('--challenge-height', `${Math.ceil(height)}px`);
+});
+promptSize.observe(elements.challenge);
 
 let config = null;
 let challenge = null;

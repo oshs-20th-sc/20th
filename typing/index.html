@@ -6,21 +6,23 @@
   <meta name="theme-color" content="#ffdf87" />
   <title>타자 대회 | 20대 학생회</title>
   <link rel="stylesheet" href="../style.css?v=checkbox-fix-1" />
-  <link rel="stylesheet" href="./style.css?v=typing-certificate-1" />
-  <script type="module" src="./app.js?v=typing-certificate-1"></script>
+  <link rel="stylesheet" href="./style.css?v=typing-layout-2" />
+  <script type="module" src="./app.js?v=typing-layout-2"></script>
 </head>
 <body class="inside-page typing-page">
   <main class="container">
     <div class="typing-shell">
-      <header class="typing-heading">
-        <h1>타자 대회</h1>
-        <p>문구를 정확히 완성해 주세요.</p>
+      <header class="typing-header">
+        <div class="typing-heading">
+          <h1>타자 대회</h1>
+          <p>문구를 정확히 완성해 주세요.</p>
+        </div>
+        <aside class="mascot-aside" aria-label="입력에 반응하는 오별이">
+          <div id="obyeol" class="obyeol" data-mood="idle"></div>
+          <p id="obyeol-message">준비됐어요!</p>
+        </aside>
+        <div id="login"></div>
       </header>
-      <aside class="mascot-aside" aria-label="입력에 반응하는 오별이">
-        <div id="obyeol" class="obyeol" data-mood="idle"></div>
-        <p id="obyeol-message">준비됐어요!</p>
-      </aside>
-      <div id="login"></div>
       <div id="student-view" hidden>
         <p id="event-status" role="status" hidden></p>
         <button id="reload" type="button" hidden>다시 불러오기</button>
@@ -41,7 +43,6 @@
 
       </div>
     </div>
-    <footer class="inside-footer">천안오성고등학교 · 20대 학생회</footer>
   </main>
   <dialog id="record-dialog" aria-labelledby="record-title" aria-describedby="record-save-status">
     <article class="record-card">

@@ -132,7 +132,7 @@ try {
     await shot(page,'record-saving');
     assert.equal(await page.locator('#record-student').textContent(),'20101');
     assert.equal(await page.locator('#record-name').textContent(),'김오성');
-    await waitText(page,'#record-save-status','저장되었어요');
+    await page.waitForFunction(()=>document.querySelector('#record-save-status').dataset.state==='saved' && document.querySelector('#record-save-status').hidden);
     const result=await page.evaluate(()=>window.__submitted[0]);
     assert.equal(result.errors,2); assert.equal(result.score,Math.max(0,result.speed-6));
     const identity=await page.evaluate(()=>document.activeElement.id);
@@ -169,7 +169,7 @@ try {
     await waitText(page,'#attempt-status','저장 완료');
     const records=await page.evaluate(()=>window.__submitted);
     assert.equal(records.length,2); assert.deepEqual(records[0],records[1]);
-    await page.locator('#show-record').click(); await waitText(page,'#record-save-status','저장되었어요');
+    await page.locator('#show-record').click(); await page.waitForFunction(()=>document.querySelector('#record-save-status').dataset.state==='saved' && document.querySelector('#record-save-status').hidden);
     await shot(page,'record-mobile'); await page.locator('#record-close').click();
     report.push({case:'server failure + IndexedDB queue + exact retry payload + mobile result',passed:true});
     await context.close();

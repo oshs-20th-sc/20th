@@ -175,7 +175,9 @@ try {
   assert.equal(await returning.locator('#typing-input').isDisabled(),true);
   assert.equal(await returning.locator('#typing-input').inputValue(),phrase);
   assert.equal(await returning.locator('#record-save-status').getAttribute('data-state'),'saved');
-  assert.equal(await returning.locator('#record-save-status').innerText(),'기록이 저장됐어요!');
+  assert.equal(await returning.locator('#record-save-status').textContent(),'');
+  assert.equal(await returning.locator('#record-save-status').isVisible(),false);
+  assert.equal(await returning.locator('#record-dialog').getAttribute('aria-describedby'),null);
   assert.equal(await returning.locator('#obyeol').getAttribute('data-mood'),'complete');
   const replayMetrics=await returning.locator('#record-dialog').evaluate(dialog=>Object.fromEntries(
     ['student','name','score','speed','errors','time'].map(field=>[field,document.getElementById(`record-${field}`).textContent])
@@ -185,14 +187,6 @@ try {
     speed:String(savedCertificate.certificate['분당타수']),
     errors:String(savedCertificate.certificate['누적오타']),
     time:(savedCertificate.certificate['소요시간밀리초']/1000).toFixed(2)});
-  const savedStatusStyle=await returning.locator('#record-save-status').evaluate(element=>({
-    color:getComputedStyle(element).color,
-    cardColor:getComputedStyle(document.querySelector('.record-card')).color,
-    background:getComputedStyle(element).backgroundColor,
-    cardBackground:getComputedStyle(document.querySelector('#record-dialog')).backgroundColor,
-  }));
-  assert.equal(savedStatusStyle.color,savedStatusStyle.cardColor,'saved status stays neutral');
-  assert.equal(savedStatusStyle.background,savedStatusStyle.cardBackground,'saved status uses the card palette');
   assert.equal(await returning.locator('#student-logout').innerText(),'다음 참가자');
   await returning.keyboard.press('Escape');
   await returning.waitForFunction(()=>!document.querySelector('#record-dialog').open);

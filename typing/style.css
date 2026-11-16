@@ -3,9 +3,11 @@
 .typing-page .inside-nav { margin-bottom: 18px; }
 .typing-page:not(.has-participant) .container { width: min(460px, calc(100% - 48px)); min-height: 100vh; display: grid; grid-template-rows: 1fr auto 1fr; }
 .typing-page:not(.has-participant) .container::before { content: ""; }
-.typing-page:not(.has-participant) .inside-footer { align-self: end; }
-.typing-shell { width: 100%; display: grid; grid-template-columns: minmax(0, 1fr) 240px; gap: 0 18px; padding: 25px 28px 22px; background: var(--paper); border: 2px solid var(--ink); border-radius: 24px; box-shadow: 0 6px 0 #6b4b201a; }
-.typing-page:not(.has-participant) .typing-shell { width: 100%; grid-template-columns: minmax(0, 1fr) 120px; justify-self: center; }
+.typing-shell { width: 100%; padding: 25px 28px 22px; background: var(--paper); border: 2px solid var(--ink); border-radius: 24px; box-shadow: 0 6px 0 #6b4b201a; }
+.typing-page:not(.has-participant) .typing-shell { width: 100%; justify-self: center; }
+.typing-header { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 0 18px; }
+.typing-page:not(.has-participant) .typing-header { grid-template-columns: minmax(0, 1fr) 120px; }
+.has-participant .typing-header { border-bottom: 1px solid var(--line); margin-bottom: 14px; padding-bottom: 12px; }
 .typing-heading { grid-column: 1; grid-row: 1; align-self: center; padding-bottom: 12px; }
 .typing-heading h1 { font-size: 30px; }
 .typing-heading > p:last-child { margin: 9px 0 0; font-size: 13px; color: var(--muted); }
@@ -17,10 +19,11 @@
 .typing-page #entry-form { display: block; }
 .typing-page #student-session { margin: 0 0 18px; padding: 10px 12px; min-height: 53px; background: #fff4d8; border-color: var(--line); gap: 8px; }
 #student-name { font-weight: 750; font-size: 14px; overflow-wrap: anywhere; min-width: 0; }
+#student-name:empty { display: none; }
 #student-session button { min-height: 34px; padding: 5px 11px; font-size: 12px; flex-shrink: 0; }
 #student-view { grid-column: 1 / -1; min-width: 0; }
 .has-participant .typing-heading { padding-bottom: 16px; }
-.has-participant #login { grid-row: 2; }
+.has-participant #login { grid-column: 1; grid-row: 2; align-self: start; border: 0; padding: 0; }
 .has-participant #student-view { grid-row: 3; }
 .stage-panel .section-top { gap: 8px; align-items: baseline; }
 .stage-panel .section-top h2 { margin: 0; font-size: 18px; }
@@ -46,16 +49,14 @@
 .stage-panel .actions:has(> :not([hidden])) { padding-bottom: 4px; }
 .stage-panel .actions:not(:has(> :not([hidden]))) { display: none; }
 #retry, #show-record { background: #ffe3a0; }
-.typing-page .inside-footer { margin-top: 14px; padding: 9px 0 0; font-size: 10px; }
 /* Keep Obyeol with the title, above the login and typing controls. */
 .mascot-aside { grid-column: 2; grid-row: 1; align-self: center; justify-self: end; width: 240px; display: flex; flex-direction: row-reverse; align-items: center; gap: 12px; padding: 0 0 12px; min-width: 0; }
 .obyeol { width: 100%; aspect-ratio: 460 / 480; }
 .obyeol svg { display: block; width: 100%; height: 100%; overflow: visible; }
 .mascot-aside .obyeol { flex: 0 0 82px; width: 82px; margin: 0; }
 
-.has-participant .mascot-aside { padding-bottom: 8px; }
+.has-participant .mascot-aside { grid-row: 1 / 3; padding: 0; }
 .has-participant .typing-shell { max-width: 1080px; margin-inline: auto; }
-.has-participant #login { padding-top: 12px; }
 
 #obyeol-message { position: relative; flex: 1; margin: 0; padding: 9px 11px; border: 1.5px solid var(--ink); border-radius: 10px; background: #fffefb; font-size: 12px; line-height: 1.55; color: var(--ink); text-align: center; }
 #obyeol-message::after { content: ''; position: absolute; width: 9px; height: 9px; right: -5.5px; top: calc(50% - 5px); background: #fffefb; border-top: 1.5px solid var(--ink); border-right: 1.5px solid var(--ink); transform: rotate(45deg); }
@@ -134,7 +135,6 @@
   .has-participant .metrics > div { padding-block: 6px; }
   .has-participant #typing-input { height: 92px; min-height: 92px; }
   .has-participant .challenge { min-height: 0; }
-  .typing-page .inside-footer { margin-top: 13px; padding-top: 9px; }
   .typing-page #student-session { margin-bottom: 12px; padding: 7px 11px; min-height: 46px; }
   .metrics { margin: 12px 0; }
   .challenge { padding: 12px 15px; font-size: 17px; }
@@ -204,31 +204,29 @@
 
 /* Compact controls make room for Obyeol without clipping the prompt. */
 .typing-page .container { padding-top: 16px; padding-bottom: 12px; }
-.typing-shell { grid-template-columns: minmax(0, 1fr) 260px; padding: 18px 22px 16px; }
+.typing-shell { padding: 18px 22px 16px; }
 .typing-heading h1 { font-size: 28px; }
 .typing-heading > p:last-child { margin-top: 6px; font-size: 12px; }
-.has-participant .typing-heading { padding-bottom: 8px; }
+.has-participant .typing-heading { align-self: end; padding: 0 0 12px; margin: 0; }
 .mascot-aside { width: 260px; gap: 10px; padding-bottom: 8px; }
 .mascot-aside .obyeol { flex-basis: 144px; width: 144px; }
 #obyeol-message { flex: 0 1 106px; padding: 5px 7px; font-size: 11px; line-height: 1.45; }
 .typing-page:not(.has-participant) .mascot-aside { width: 120px; }
 .typing-page:not(.has-participant) .mascot-aside .obyeol { flex-basis: 120px; width: 120px; }
-.typing-page:not(.has-participant) #obyeol-message,
-.typing-page:not(.has-participant) .inside-footer { display: none; }
+.typing-page:not(.has-participant) #obyeol-message { display: none; }
 .typing-page #login .login-panel { max-width: 360px; padding-bottom: 8px; }
 .typing-page:not(.has-participant) #login .login-panel { max-width: none; }
 .typing-page .login-panel h2 { font-size: 20px; margin-bottom: 12px; }
 .typing-page .login-panel input { min-height: 43px; padding-block: 9px; }
 .typing-page .login-panel button[type='submit'] { min-height: 43px; margin-top: 16px; }
-.typing-page #student-session { min-height: 40px; margin-bottom: 10px; padding: 5px 10px; }
+.typing-page #student-session { justify-content: flex-start; flex-wrap: wrap; width: fit-content; min-height: 30px; margin: 0; padding: 0; border: 0; background: transparent; gap: 12px; }
+.typing-page #student-session button { margin: 0; }
 .metrics { margin: 10px 0; gap: 8px; }
 .metrics > div { padding: 7px 12px; }
 .metrics dd { font-size: 25px; margin-top: 3px; }
 .challenge { margin-bottom: 10px; padding: 12px 15px; font-size: 17px; line-height: 1.8; }
 .stage-panel label { margin-bottom: 5px; font-size: 12px; }
-#typing-input { height: 84px; min-height: 84px; padding: 10px 13px; font-size: 16px; }
-.has-participant #typing-input { height: 84px; min-height: 84px; }
-.typing-page .inside-footer { margin-top: 10px; padding-top: 7px; }
+#typing-input, .has-participant #typing-input { height: max(160px, var(--challenge-height, 160px)); min-height: max(160px, var(--challenge-height, 160px)); padding: 12px 15px; font-size: 17px; line-height: 1.8; }
 .metrics dt { font-size: 11px; }
 .metrics > div { padding-block: 6px; }
 .metrics dd { font-size: 24px; line-height: 1.2; }

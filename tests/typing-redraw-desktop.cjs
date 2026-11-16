@@ -37,13 +37,15 @@ for(const [width,height] of [[1366,768],[1710,1060]]){
  assert.equal(await page.locator('#obyeol svg').getAttribute('viewBox'),'0 0 460 480');
  assert.equal(await page.locator('.status-chip, .intro-kicker, .inside-nav').count(),0);
  assert.equal(await page.locator('#obyeol-message').isVisible(),false);
- assert.equal(await page.locator('.inside-footer').isVisible(),false);
+ assert.equal(await page.locator('.inside-footer').count(),0);
  assert.equal(await page.locator('#obyeol-message').evaluate(el=>getComputedStyle(el,'::after').width),'9px');
  await page.screenshot({path:`${out}/redraw-login-final-${width}.png`,animations:'disabled'});measurements.push({width,height,...info});
 }
 await page.setViewportSize({width:1366,height:768});await page.clock.install();
 await page.locator('[name=studentNumber]').fill('20101');await page.locator('[name=name]').fill('김오성');await page.locator('#entry-form button').click();await page.waitForFunction(()=>!document.querySelector('#typing-input').disabled);
-assert.equal(await page.locator('.rules-panel').count(),0);
+assert.equal(await page.locator('.rules-panel, .inside-footer').count(),0);
+const header=await page.evaluate(()=>{const r=el=>el.getBoundingClientRect();const head=r(document.querySelector('.typing-header'));const session=r(document.querySelector('#student-session'));const input=r(document.querySelector('#typing-input'));const prompt=r(document.querySelector('#challenge'));return {inside:document.querySelector('.typing-header').contains(document.querySelector('#student-session')),sessionBottom:session.bottom,headerBottom:head.bottom,sessionWidth:session.width,headerWidth:head.width,inputHeight:input.height,promptHeight:prompt.height,inputWidth:input.width,promptWidth:prompt.width}});
+assert(header.inside);assert(header.sessionBottom<=header.headerBottom);assert(header.sessionWidth<header.headerWidth/2);assert(header.inputHeight>=160);assert(header.inputHeight>=header.promptHeight);assert.equal(header.inputWidth,header.promptWidth);
 assert.equal(await page.locator('#obyeol').evaluate(el=>el.getBoundingClientRect().width),144);
 await page.locator('#typing-input').evaluate(input=>{
  input.dispatchEvent(new CompositionEvent('compositionstart',{bubbles:true}));
@@ -79,6 +81,15 @@ await page.reload();await page.locator('#entry-form').waitFor();
 await page.evaluate(()=>{window.__longPrompt='천안오성고등학교에서 서로 소통하고 다양한 경험을 쌓으며 자신의 꿈을 향해 나아갑니다. '.repeat(7).trim()});
 await page.locator('[name=studentNumber]').fill('20102');await page.locator('[name=name]').fill('문구확인');await page.locator('#entry-form button').click();await page.waitForFunction(()=>!document.querySelector('#typing-input').disabled);
 const prompt=await page.locator('#challenge').evaluate(el=>({scrollHeight:el.scrollHeight,clientHeight:el.clientHeight,maxHeight:getComputedStyle(el).maxHeight,overflow:getComputedStyle(el).overflowY,lastBottom:el.lastElementChild.getBoundingClientRect().bottom,panelBottom:el.getBoundingClientRect().bottom}));
+await page.waitForFunction(()=>document.querySelector('#typing-input').getBoundingClientRect().height>=document.querySelector('#challenge').getBoundingClientRect().height);
+for(const [width,height] of [[1366,768],[1710,1060]]){
+ await page.setViewportSize({width,height});
+ await page.waitForFunction(()=>document.querySelector('#typing-input').getBoundingClientRect().height>=document.querySelector('#challenge').getBoundingClientRect().height);
+ const layout=await page.evaluate(()=>{const input=document.querySelector('#typing-input').getBoundingClientRect(),challenge=document.querySelector('#challenge').getBoundingClientRect();return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,inputBottom:input.bottom,inputHeight:input.height,challengeHeight:challenge.height}});
+ assert.equal(layout.overflow,false);assert(layout.inputBottom<height);measurements.push({typing:layout});
+ await page.screenshot({path:`${out}/typing-spacious-${width}.png`,animations:'disabled'});
+}
+await page.setViewportSize({width:1366,height:768});
 assert.equal(prompt.maxHeight,'none');assert.equal(prompt.overflow,'visible');assert(prompt.scrollHeight<=prompt.clientHeight+1);assert(prompt.lastBottom<prompt.panelBottom);
 assert.equal(await page.locator('#feedback').isVisible(),false);assert.equal(await page.locator('#attempt-status').textContent(),'');
 await page.screenshot({path:`${out}/full-prompt-desktop.png`,animations:'disabled'});
@@ -99,14 +110,14 @@ const certificate={id:'00000000-0000-4000-8000-000000000001',participantId:'2010
 await returning.evaluate(value=>{window.__certificate=value},certificate);
 const enter=async(number='20101',name='김오성')=>{await returning.locator('[name=studentNumber]').fill(number);await returning.locator('[name=name]').fill(name);await returning.locator('#entry-form button').click()};
 await enter();await returning.locator('#record-dialog[open]').waitFor();
-assert.equal(await returning.locator('#record-save-status').textContent(),'기록이 저장됐어요!');
+assert.equal(await returning.locator('#record-save-status').textContent(),'');
+assert.equal(await returning.locator('#record-save-status').isVisible(),false);
+assert.equal(await returning.locator('#record-dialog').getAttribute('aria-describedby'),null);
 assert.equal(await returning.locator('#typing-input').isDisabled(),true);
 assert.equal(await returning.locator('#typing-input').inputValue(),'가나');
 assert.equal(await returning.locator('#record-score').textContent(),'294');
 assert.equal(await returning.locator('#record-time').textContent(),'12.35');
 assert.equal(await returning.evaluate(()=>window.__record),undefined);
-const palette=await returning.evaluate(()=>{const status=getComputedStyle(document.querySelector('#record-save-status'));const card=getComputedStyle(document.querySelector('#record-dialog'));return{statusColor:status.color,cardColor:card.color,statusBg:status.backgroundColor,cardBg:card.backgroundColor}});
-assert.equal(palette.statusColor,palette.cardColor);assert.equal(palette.statusBg,palette.cardBg);
 await returning.screenshot({path:out+'/returning-record-desktop.png',animations:'disabled'});
 await returning.keyboard.press('Escape');await returning.waitForFunction(()=>document.activeElement.id==='show-record');
 await returning.locator('#student-logout').click();await returning.locator('#entry-form').waitFor();
