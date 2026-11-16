@@ -1,56 +1,29 @@
 <!doctype html>
 <html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>공개 글</title>
-    <link rel="stylesheet" href="../style.css" />
-    <script type="module" src="./app.js?v=typing-fix-20261113"></script>
-  </head>
-  <body>
-    <main class="container">
-      <header class="page-header">
-        <h1>공개 글</h1>
-        <button id="refresh" type="button">새로고침</button>
-      </header>
-      <p id="source-info" class="muted" hidden></p>
-      <p id="status" role="status" aria-live="polite">불러오는 중</p>
-      <p id="error" class="error" role="alert" hidden></p>
-
-      <div id="search-area" class="toolbar" hidden>
-        <label for="search">글 검색</label>
-        <input id="search" type="search" maxlength="100" autocomplete="off" />
-      </div>
-
-      <section
-        id="letters"
-        class="letter-list"
-        aria-label="공개 글 목록"
-        tabindex="-1"
-        hidden
-      ></section>
-      <section id="detail" aria-labelledby="detail-title" tabindex="-1" hidden>
-        <button id="back-to-list" type="button">목록으로</button>
-        <article class="panel">
-          <h2 id="detail-title"></h2>
-          <p id="detail-status" class="muted" hidden></p>
-          <p id="detail-content" class="letter-content"></p>
-          <div class="actions">
-            <button id="share" type="button" hidden>링크 공유</button>
-          </div>
-          <label id="share-link-area" hidden>
-            공유 링크
-            <input id="share-link" type="url" readonly />
-          </label>
-        </article>
-      </section>
-
-      <nav id="pagination" class="pagination" aria-label="글 목록 페이지" hidden>
-        <button id="previous" type="button" disabled>이전</button>
-        <span id="page">1 페이지</span>
-        <button id="next" type="button" disabled>다음</button>
-      </nav>
-      <noscript>JavaScript를 활성화해 주세요.</noscript>
-    </main>
-  </body>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#ffdf87" />
+  <title>공개 글 | 20대 학생회</title>
+  <link rel="stylesheet" href="../style.css?v=checkbox-fix-1" />
+  <script type="module" src="./app.js?v=typing-certificate-1"></script>
+</head>
+<body class="inside-page welcome-page">
+  <main class="container narrow-container">
+    <div class="inside-nav"><span class="inside-brand">20대 학생회</span></div>
+    <header class="page-header page-intro">
+      <div class="page-intro-copy"><h1>공개 글</h1><p>공개된 글을 확인할 수 있습니다.</p></div>
+      <div class="page-mascot"><img src="../assets/obyeol.svg?v=brighter-2" alt="오별이" width="460" height="480" /></div>
+    </header>
+    <div class="section-top list-actions"><h2>글 목록</h2><button id="refresh" type="button">새로고침</button></div>
+    <p id="source-info" class="muted" hidden></p>
+    <p id="status" role="status" aria-live="polite">불러오는 중</p><p id="error" class="error" role="alert" hidden></p>
+    <div id="search-area" class="toolbar" hidden><label for="search">글 검색</label><input id="search" type="search" maxlength="100" autocomplete="off" placeholder="검색어를 입력해 주세요" /></div>
+    <section id="letters" class="letter-list" aria-label="공개 글 목록" tabindex="-1" hidden></section>
+    <section id="detail" aria-labelledby="detail-title" tabindex="-1" hidden><button id="back-to-list" type="button">목록으로</button><article class="panel"><h2 id="detail-title"></h2><p id="detail-status" class="muted" hidden></p><p id="detail-content" class="letter-content"></p><div class="actions"><button id="share" type="button" hidden>링크 공유</button></div><label id="share-link-area" hidden>공유 링크<input id="share-link" type="url" readonly /></label></article></section>
+    <nav id="pagination" class="pagination" aria-label="글 목록 페이지" hidden><button id="previous" type="button" disabled>이전</button><span id="page">1 페이지</span><button id="next" type="button" disabled>다음</button></nav>
+    <noscript>JavaScript를 활성화해 주세요.</noscript>
+    <footer class="inside-footer">천안오성고등학교 · 20대 학생회</footer>
+  </main>
+</body>
 </html>

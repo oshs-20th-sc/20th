@@ -1,16 +1,18 @@
-import { getPublicDb, errorMessage } from '../db/firebase.js?v=ops-20261113';
-import { readEvent, readChallenge } from '../db/database.js?v=typing-fix-20261113';
-import { mountLogin } from '../login.js?v=ops-20261113';
-import { downloadFile } from '../common.js?v=record-entry-1';
+import { mountObyeol } from './obyeol.js?v=typing-certificate-1';
+import { mountRecordCard } from './record-card.js?v=typing-layout-2';
+import { getPublicDb, errorMessage } from '../db/firebase.js?v=typing-certificate-1';
+import { readEvent, readChallenge, readTypingCertificate } from '../db/database.js?v=typing-certificate-1';
+import { mountLogin } from '../login.js?v=typing-certificate-1';
+import { downloadFile } from '../common.js?v=typing-certificate-1';
 import {
   initialInputState,
   commitInput,
   compositionStart,
   compositionEnd,
   isComplete,
-} from './engine.js?v=typing-fix-20261113';
-import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=record-entry-1';
-import { saveResult } from './storage.js?v=typing-fix-20261113';
+} from './engine.js?v=typing-certificate-1';
+import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=typing-certificate-1';
+import { saveResult } from './storage.js?v=typing-certificate-1';
 
 const elements = Object.fromEntries(
   [
@@ -28,10 +30,18 @@ const elements = Object.fromEntries(
     'retry',
     'rescue',
     'rescue-confirm',
-    'reference-keys',
-    'error-penalty',
   ].map((id) => [id, document.getElementById(id)]),
 );
+
+const obyeol = mountObyeol(document.getElementById('obyeol'), document.getElementById('obyeol-message'));
+const recordCard = mountRecordCard();
+
+// Match the prompt after wrapping or a resize, without measuring on every input.
+const promptSize = new ResizeObserver(([entry]) => {
+  const height = entry.borderBoxSize?.[0]?.blockSize ?? elements.challenge.getBoundingClientRect().height;
+  if (height > 0) elements.challenge.closest('.stage-panel').style.setProperty('--challenge-height', `${Math.ceil(height)}px`);
+});
+promptSize.observe(elements.challenge);
 
 let config = null;
 let challenge = null;
@@ -49,6 +59,7 @@ let timer = null;
 let sessionVersion = 0;
 let needsBackup = false;
 let filePrepared = false;
+let failureReason = '';
 let pendingEdit = null;
 let deletionKey = '';
 
@@ -65,8 +76,8 @@ function updateControls() {
   elements['rescue-confirm'].hidden = status !== 'failed' || !needsBackup || !filePrepared;
   elements['attempt-status'].textContent = {
     ready: '',
-    armed: '첫 입력 대기',
-    running: '측정 중',
+    armed: '',
+    running: '',
     saving: '저장 중',
     saved: '저장 완료',
     failed: '저장 실패',
@@ -81,12 +92,11 @@ function transition(next) {
     timer = null;
   }
   updateControls();
+  recordCard.status(next, needsBackup, filePrepared, failureReason);
 }
 
 function showChallenge(current) {
   elements['challenge-title'].textContent = current.title;
-  elements['reference-keys'].textContent = current.referenceKeystrokes;
-  elements['error-penalty'].textContent = EVENT_ERROR_PENALTY;
   elements.challenge.setAttribute('aria-label', `입력할 문구: ${current.text}`);
   spans = Array.from(current.text, (character) => {
     const span = document.createElement('span');
@@ -158,6 +168,7 @@ function beginTiming() {
 async function persist(record) {
   if (saving) return;
   saving = true;
+  failureReason = '';
   const version = sessionVersion;
   transition('saving');
   message('기록 저장 중');
@@ -172,6 +183,7 @@ async function persist(record) {
     login.finish();
   } catch (reason) {
     if (version === sessionVersion) {
+      failureReason = errorMessage(reason);
       needsBackup = reason.backupSaved === false;
       transition('failed');
       message(
@@ -189,9 +201,11 @@ async function persist(record) {
 function process(value, endedComposition = false, edit) {
   if (!['armed', 'running'].includes(status) || !attempt) return;
   if (value.length) beginTiming();
+  const previousEngine = engine;
   engine = endedComposition
     ? compositionEnd(engine, value, attempt.text)
     : commitInput(engine, value, attempt.text, edit);
+  obyeol.react(previousEngine, engine, edit);
   elements.errors.textContent = engine.errors;
   highlight(value);
   message(`입력 ${Array.from(value).length} / ${Array.from(attempt.text).length}자`);
@@ -220,11 +234,15 @@ function process(value, endedComposition = false, edit) {
   elements.score.textContent = result.score;
   elements.result.textContent = `${result.speed}타/분 · 오타 ${result.errors}회 · ${result.score}점`;
   elements.result.hidden = false;
+  // Start the existing save flow before opening presentation UI.
   void persist(result);
+  obyeol.complete();
+  recordCard.show(result);
 }
 
 function invalidate(reason) {
   if (!['armed', 'running'].includes(status)) return;
+  obyeol.pause();
   transition('invalid');
   message(reason, true);
 }
@@ -232,7 +250,16 @@ function invalidate(reason) {
 async function prepareAttempt() {
   if (!participant || loading || status !== 'ready') return;
   const version = sessionVersion;
+  loading = true;
+  elements.reload.hidden = true;
+  updateControls();
   try {
+    const previous = await readTypingCertificate(await getPublicDb(), participant);
+    if (version !== sessionVersion) return;
+    if (previous) {
+      showCompletedRecord(previous);
+      return;
+    }
     const current = await refresh();
     if (version !== sessionVersion) return;
     if (current.challenge.deleted) throw new Error('사용할 문구가 삭제되었습니다. 운영진에게 알려 주세요.');
@@ -241,6 +268,8 @@ async function prepareAttempt() {
     startedAt = null;
     elapsed = 0;
     result = null;
+    obyeol.reset();
+    recordCard.reset();
     elements['typing-input'].value = '';
     elements.elapsed.textContent = '0.0';
     elements.errors.textContent = '0';
@@ -248,11 +277,44 @@ async function prepareAttempt() {
     elements.result.hidden = true;
     showChallenge(attempt);
     transition('armed');
-    message('첫 입력부터 측정합니다.');
+    message('');
     elements['typing-input'].focus();
   } catch (reason) {
+    if (version !== sessionVersion) return;
+    elements.reload.hidden = false;
     message(errorMessage(reason), true);
+  } finally {
+    if (version === sessionVersion) {
+      loading = false;
+      updateControls();
+    }
   }
+}
+
+function showCompletedRecord(record) {
+  attempt = {challengeId:record.challengeId, title:record.title, text:record.text,
+    referenceKeystrokes:record.referenceKeystrokes, practice:false, errorPenalty:EVENT_ERROR_PENALTY};
+  showChallenge(attempt);
+  elements['typing-input'].value = record.text;
+  highlight(record.text);
+  elapsed = record.elapsedMs;
+  elements.elapsed.textContent = (elapsed / 1000).toFixed(2);
+  elements.errors.textContent = record.errors;
+  elements.score.textContent = record.score;
+  elements.result.textContent = `${record.speed}타/분 · 오타 ${record.errors}회 · ${record.score}점`;
+  elements.result.hidden = false;
+  elements['event-status'].hidden = true;
+  elements.reload.hidden = true;
+  needsBackup = false;
+  filePrepared = false;
+  failureReason = '';
+  participant = null;
+  result = null;
+  obyeol.complete();
+  recordCard.show(record, 'saved');
+  transition('saved');
+  message('저장 완료');
+  login.finish();
 }
 
 const input = elements['typing-input'];
@@ -343,8 +405,12 @@ elements['rescue-confirm'].addEventListener('click', () => {
   needsBackup = false;
   updateControls();
   message('저장한 기록 파일을 운영진에게 전달하세요.');
+  recordCard.status(status, needsBackup, filePrepared, failureReason);
 });
 function clearAttempt() {
+  obyeol.reset();
+  recordCard.reset();
+  document.body.classList.remove('has-participant');
   pendingEdit = null;
   deletionKey = '';
   attempt = null;
@@ -353,14 +419,16 @@ function clearAttempt() {
   result = null;
   needsBackup = false;
   filePrepared = false;
+  failureReason = '';
   elapsed = 0;
+  loading = false;
   input.value = '';
   elements.elapsed.textContent = '0.0';
   elements.errors.textContent = '0';
   elements.score.textContent = '—';
   elements.result.hidden = true;
   transition('ready');
-  message('문구를 입력하면 측정이 시작됩니다.');
+  message('');
 }
 const login = mountLogin({
   container: document.querySelector('#login'),
@@ -369,6 +437,7 @@ const login = mountLogin({
     const entering = !participant || participant.sessionId !== student.sessionId;
     if (entering) sessionVersion++;
     participant = student;
+    document.body.classList.add('has-participant');
     document.querySelector('#student-view').hidden = false;
     updateControls();
     if (entering) void prepareAttempt();

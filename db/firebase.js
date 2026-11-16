@@ -10,7 +10,7 @@ import {
   setDoc,
   serverTimestamp,
   onSnapshot,
-} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
+} from './store.js?v=typing-certificate-1';
 export class ClientError extends Error {
   constructor(message, status = 0, code = 'UNKNOWN') {
     super(message);
@@ -491,4 +491,4 @@ export {
   getDoc,
   serverTimestamp,
   setDoc,
-} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
+} from './store.js?v=typing-certificate-1';

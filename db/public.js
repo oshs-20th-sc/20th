@@ -8,10 +8,10 @@ import {
   orderBy,
   query,
   startAfter,
-} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
+} from './store.js?v=typing-certificate-1';
 import { UUID_PATTERN } from '../common.js';
-import { CHALLENGE } from '../typing/challenge.js?v=typing-fix-20261113';
-import { ClientError, withDeadline } from './firebase.js?v=ops-20261113';
+import { CHALLENGE } from '../typing/challenge.js?v=typing-certificate-1';
+import { ClientError, withDeadline } from './firebase.js?v=typing-certificate-1';
 
 function publicLetter(snapshot) {
   const data = snapshot.data();

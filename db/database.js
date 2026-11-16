@@ -1,4 +1,4 @@
-import { toCsv, validatePublicData } from '../common.js?v=record-entry-1';
+import { toCsv, validatePublicData } from '../common.js?v=typing-certificate-1';
 import {
   collection,
   doc,
@@ -16,20 +16,23 @@ import {
   writeBatch,
   setDoc,
   deleteDoc,
-} from 'https://www.gstatic.com/firebasejs/13.1.0/firebase-firestore.js';
+} from './store.js?v=typing-certificate-1';
 import {
   normalizeText,
   unicodeLength,
   UUID_PATTERN,
   validateParticipant,
   validateSubmission,
-} from '../common.js?v=record-entry-1';
-import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=record-entry-1';
-import { CHALLENGE } from '../typing/challenge.js?v=typing-fix-20261113';
-import { ClientError, withDeadline, adminContext } from './firebase.js?v=ops-20261113';
+} from '../common.js?v=typing-certificate-1';
+import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=typing-certificate-1';
+import { CHALLENGE } from '../typing/challenge.js?v=typing-certificate-1';
+import { ClientError, withDeadline, adminContext } from './firebase.js?v=typing-certificate-1';
+import { readEvent } from './public.js?v=typing-certificate-1';
+import { COLLECTIONS, SCHEMA_VERSION, encodeData } from './schema.js?v=typing-certificate-1';
+import { typingCertificateKey, typingCertificate, validTypingCertificate } from './typing-certificate.js?v=typing-certificate-1';
 export const PAGE_SIZE = 100;
 const OFFICIAL_CLAIM_PREFIX = 'official-20261123-';
-export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=typing-fix-20261113';
+export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=typing-certificate-1';
 export async function payloadHash(payload) {
   const bytes = await crypto.subtle.digest(
     'SHA-256',
@@ -42,7 +45,7 @@ export async function payloadHash(payload) {
 function receiptConflict(kind) {
   return new ClientError(
     kind === 'typing'
-      ? '기록을 저장하지 못했습니다. 같은 학번의 기존 기록이나 문구 변경 여부를 운영진에게 확인해 주세요.'
+      ? '서버가 타자 기록 접수를 거부했습니다. 같은 학번의 공식 참여 기록이 이미 있거나 문구·점수·접수 규칙과 맞지 않을 수 있습니다. 운영진에게 확인해 주세요.'
       : '행사 접수가 마감되었거나 이미 처리된 요청입니다. 접수 상태를 확인해 주세요.',
     409,
     kind === 'typing' ? 'TYPING_REJECTED' : 'DUPLICATE_OR_CLOSED',
@@ -50,7 +53,7 @@ function receiptConflict(kind) {
 }
 
 async function existingRecordReceipt(db, id, kind, hash, legacyHash = null) {
-  const saved = await withDeadline(getDoc(doc(db, 'receipts', id)));
+  const saved = await withDeadline(getDoc(doc(db, kind === 'letter' ? 'letterReceipts' : 'typingReceipts', id)));
   if (!saved.exists()) return null;
   const data = saved.data();
   if (data.entry_mode === 'record' && data.kind === kind &&
@@ -70,7 +73,7 @@ async function createRecordOnce(
   id,
   kind,
   payload,
-  { claimStudentNumber = null, asAdmin = false } = {},
+  { claimStudentNumber = null, asAdmin = false, certificate = null } = {},
 ) {
   if (!UUID_PATTERN.test(id)) throw new ClientError('접수 ID가 올바르지 않습니다.', 400);
   // Recovery changes only the review timestamp, not the original receipt payload.
@@ -82,14 +85,18 @@ async function createRecordOnce(
 
   const batch = writeBatch(db);
   let savedPayload = payload;
+  let publishCertificate = !!certificate && !!claimStudentNumber;
   if (claimStudentNumber) {
     const claimId = `${OFFICIAL_CLAIM_PREFIX}${claimStudentNumber}`;
-    const claimRef = doc(db, 'receipts', claimId);
+    const claimRef = doc(db, 'typingEntries', claimId);
     if (asAdmin) {
       const claim = await withDeadline(getDoc(claimRef));
       if (claim.exists()) {
         const previousResult = claim.data().result_id;
-        if (previousResult !== id) savedPayload = { ...payload, duplicate_of: previousResult };
+        if (previousResult !== id) {
+          savedPayload = { ...payload, duplicate_of: previousResult };
+          publishCertificate = false;
+        }
       } else {
         batch.set(claimRef, {
           kind: 'typingEntry',
@@ -113,7 +120,7 @@ async function createRecordOnce(
     owner_uid: null,
     [timestampField]: serverTimestamp(),
   });
-  batch.set(doc(db, 'receipts', id), {
+  batch.set(doc(db, kind === 'letter' ? 'letterReceipts' : 'typingReceipts', id), {
     id,
     owner_uid: null,
     entry_mode: 'record',
@@ -121,6 +128,10 @@ async function createRecordOnce(
     payload_hash: hash,
     created_at: serverTimestamp(),
   });
+  if (publishCertificate) {
+    const key = await typingCertificateKey(payload.participantId, payload.displayName);
+    batch.set(doc(db, 'typingCertificates', key), certificate);
+  }
   try {
     await withDeadline(batch.commit());
     return { id, replayed: false };
@@ -186,6 +197,7 @@ export function validateTypingResult(input, challenge = CHALLENGE) {
   if (input.speed !== computed.speed || input.score !== computed.score)
     throw new ClientError('타수와 최종 점수 계산이 일치하지 않습니다.', 400, 'INVALID_SCORE');
 }
+
 export async function submitTyping(db, participant, result, { asAdmin = false } = {}) {
   if (!asAdmin) {
     const identity = validateParticipant(participant);
@@ -211,6 +223,7 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
     validateTypingResult(record, challenge);
     return createRecordOnce(db, record.id, 'typing', record, {
       claimStudentNumber: identity.value.studentNumber,
+      certificate: typingCertificate(record, challenge),
     });
   }
 
@@ -242,6 +255,7 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
     return createRecordOnce(db, record.id, 'typing', record, {
       claimStudentNumber: record.practice ? null : identity.value.studentNumber,
       asAdmin: true,
+      certificate: record.practice ? null : typingCertificate(record, challenge),
     });
   }
   const challenge = await readChallenge(db, result.challengeId);
@@ -267,7 +281,7 @@ export async function submitTyping(db, participant, result, { asAdmin = false } 
   };
   const hash = await payloadHash(payload);
   return withDeadline(runTransaction(db, async (tx) => {
-    const receiptRef = doc(db, 'receipts', result.id);
+    const receiptRef = doc(db, 'typingReceipts', result.id);
     const receipt = await tx.get(receiptRef);
     if (receipt.exists()) {
       if (receipt.data().kind !== 'typing' || receipt.data().payload_hash !== hash)
@@ -408,6 +422,18 @@ export async function readTypingResult(db, id) {
   if (!UUID_PATTERN.test(id)) throw new ClientError('기록 ID를 확인하세요.', 400);
   const saved = await withDeadline(getDoc(doc(db, 'typingResults', id)));
   return saved.exists() ? decodeTyping(saved) : null;
+}
+export async function readTypingCertificate(db, participant) {
+  const checked = validateParticipant(participant);
+  if (!checked.value) throw new ClientError(checked.error, 400, 'INVALID_PARTICIPANT');
+  const key = await typingCertificateKey(checked.value.studentNumber, checked.value.name);
+  const saved = await withDeadline(getDoc(doc(db, 'typingCertificates', key)));
+  if (!saved.exists()) return null;
+  const record = saved.data();
+  if (!validTypingCertificate(record) || record.participantId !== checked.value.studentNumber ||
+      record.displayName !== checked.value.name)
+    throw new ClientError('기존 기록증을 확인하지 못했습니다. 운영진에게 알려 주세요.', 409, 'INVALID_CERTIFICATE');
+  return record;
 }
 function decodeTyping(snapshot) {
   const data = snapshot.data();
@@ -939,7 +965,80 @@ export async function deleteChallenge(db, id) {
   await withDeadline(deleteDoc(doc(db, 'challenges', id)));
 }
 export async function deleteTyping(db, id) {
-  await withDeadline(deleteDoc(doc(db, 'typingResults', id)));
+  if (!UUID_PATTERN.test(id ?? '')) throw new ClientError('기록 ID가 올바르지 않습니다.', 400);
+  try {
+    return await withDeadline(runTransaction(db, async (tx) => {
+      const resultRef = doc(db, 'typingResults', id);
+      const receiptRef = doc(db, 'typingReceipts', id);
+      const [result, receipt] = await Promise.all([tx.get(resultRef), tx.get(receiptRef)]);
+      if (!result.exists()) return { id, deleted: false, replayed: true };
+
+      const data = result.data();
+      const officialRecord = data.entry_mode === 'record' && data.practice === false;
+      const typingReceipt = receipt.exists() && receipt.data().kind === 'typing' &&
+        (data.entry_mode !== 'record' || receipt.data().entry_mode === 'record');
+      if (data.entry_mode === 'record' && receipt.exists() && !typingReceipt)
+        throw new ClientError('기록 접수 정보가 일치하지 않아 삭제하지 않았습니다.', 409, 'RECEIPT_MISMATCH');
+
+      let claimRef = null;
+      let claim = null;
+      let certificateRef = null;
+      let certificate = null;
+      if (officialRecord && /^[1-3][0-9]{4}$/.test(data.participantId ?? '')) {
+        claimRef = doc(db, 'typingEntries', `${OFFICIAL_CLAIM_PREFIX}${data.participantId}`);
+        claim = await tx.get(claimRef);
+        if (typeof data.displayName === 'string') {
+          certificateRef = doc(db, 'typingCertificates', await typingCertificateKey(data.participantId, data.displayName));
+          certificate = await tx.get(certificateRef);
+        }
+      }
+
+      tx.delete(resultRef);
+      if (typingReceipt) tx.delete(receiptRef);
+      const claimData = claim?.exists() ? claim.data() : null;
+      const releasedParticipation = !!claimData && claimData.kind === 'typingEntry' &&
+        claimData.student_number === data.participantId && claimData.result_id === id;
+      if (releasedParticipation) tx.delete(claimRef);
+      if (certificate?.exists() && certificate.data().id === id)
+        tx.delete(certificateRef);
+      return { id, deleted: true, releasedParticipation };
+    }));
+  } catch (error) {
+    if (error?.code === 'permission-denied')
+      throw new ClientError(
+        '기록 삭제가 거부되었습니다. 서버 삭제 규칙이 아직 적용되지 않았거나 관리자 권한이 부족할 수 있습니다. 기록은 삭제되지 않았습니다.',
+        403,
+        'TYPING_DELETE_REJECTED',
+      );
+    throw error;
+  }
+}
+
+// An administrator can repair only a claim whose exact referenced result is
+// already absent. The claim and any matching UUID receipt are removed together.
+export async function releaseOrphanedTypingClaim(db, studentNumber, expectedResultId) {
+  if (!/^[1-3][0-9]{4}$/.test(studentNumber ?? '') || !UUID_PATTERN.test(expectedResultId ?? ''))
+    throw new ClientError('참가 학번 또는 기록 ID를 확인하세요.', 400);
+  return withDeadline(runTransaction(db, async (tx) => {
+    const claimRef = doc(db, 'typingEntries', `${OFFICIAL_CLAIM_PREFIX}${studentNumber}`);
+    const resultRef = doc(db, 'typingResults', expectedResultId);
+    const receiptRef = doc(db, 'typingReceipts', expectedResultId);
+    const [claim, result, receipt] = await Promise.all([
+      tx.get(claimRef), tx.get(resultRef), tx.get(receiptRef),
+    ]);
+    if (!claim.exists()) return { released: false, reason: 'claim_missing' };
+    const data = claim.data();
+    if (data.kind !== 'typingEntry' || data.student_number !== studentNumber ||
+        data.result_id !== expectedResultId)
+      return { released: false, reason: 'claim_changed' };
+    if (result.exists()) return { released: false, reason: 'result_exists' };
+    if (receipt.exists() && (receipt.data().entry_mode !== 'record' || receipt.data().kind !== 'typing'))
+      return { released: false, reason: 'receipt_mismatch' };
+
+    tx.delete(claimRef);
+    if (receipt.exists()) tx.delete(receiptRef);
+    return { released: true, resultId: expectedResultId };
+  }));
 }
 export function encodeFirestore(value) {
   if (value instanceof Timestamp)
@@ -957,35 +1056,22 @@ export function encodeFirestore(value) {
 }
 export async function createPrivateBackup(db) {
   const collections = {};
-  for (const name of [
-    'letters',
-    'typingResults',
-    'receipts',
-    'challenges',
-    'publicLetters',
-    'letterTrash',
-    'letterLogs',
-  ]) {
-    collections[name] = (await allDocuments(db, name)).map((snapshot) => ({
+  for (const name of Object.keys(COLLECTIONS).filter(name => name !== 'settings')) {
+    collections[name] = (await allDocuments(db, name)).map(snapshot => ({
       id: snapshot.id,
-      data: encodeFirestore(snapshot.data()),
+      data: encodeFirestore(encodeData(name, snapshot.data())),
     }));
   }
   const settings = await Promise.all(
-    ['event', 'sessionPolicy'].map((id) => withDeadline(getDoc(doc(db, 'settings', id)))),
+    ['event', 'sessionPolicy'].map(id => withDeadline(getDoc(doc(db, 'settings', id)))),
   );
-  collections.settings = settings
-    .filter((snapshot) => snapshot.exists())
-    .map((snapshot) => ({ id: snapshot.id, data: encodeFirestore(snapshot.data()) }));
-  return {
-    schemaVersion: 4,
-    includesAuthentication: false,
-    backend: 'firebase',
-    projectId: db.app.options.projectId,
-    exportedAt: new Date().toISOString(),
-    collections,
-  };
+  collections.settings = settings.filter(snapshot => snapshot.exists()).map(snapshot => ({
+    id: snapshot.id, data: encodeFirestore(encodeData('settings', snapshot.data())),
+  }));
+  return {schemaVersion: SCHEMA_VERSION, includesAuthentication: false, backend: 'firebase',
+    projectId: db.app.options.projectId, exportedAt: new Date().toISOString(), collections};
 }
+
 export async function exportFirebase(scope, format) {
   if (!(
     (scope === 'public' && format === 'json') ||

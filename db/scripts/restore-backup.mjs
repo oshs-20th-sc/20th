@@ -9,6 +9,17 @@ import {
   retryFileOperation,
   processRows,
 } from './private-files.mjs';
+import {
+  COLLECTIONS,
+  PARENT_DOCUMENTS,
+  SCHEMA_VERSION,
+  collectionPath,
+  documentPath,
+  encodeData,
+  decodeData,
+  legacyDestination,
+  logicalId,
+} from '../schema.js';
 
 const legacy = [
   'letters',
@@ -20,6 +31,7 @@ const legacy = [
 ];
 const current = [...legacy, 'students', 'moderationLogs'];
 const audited = [...current, 'letterTrash', 'letterLogs'];
+const canonical = Object.keys(COLLECTIONS);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 const officialClaim = /^official-20261123-[1-3][0-9]{4}$/;
 function validValue(value, depth = 0) {
@@ -40,8 +52,7 @@ function validValue(value, depth = 0) {
       value.seconds > 253402300799 ||
       !Number.isInteger(value.nanoseconds) ||
       value.nanoseconds < 0 ||
-      value.nanoseconds > 999999999 ||
-      value.nanoseconds % 1000 !== 0
+      value.nanoseconds > 999999999
     )
       throw new Error('INVALID_TIMESTAMP');
     return;
@@ -66,7 +77,7 @@ function validValue(value, depth = 0) {
 export function validateBackup(input) {
   if (
     !input ||
-    ![2, 3, 4].includes(input.schemaVersion) ||
+    ![2, 3, 4, SCHEMA_VERSION].includes(input.schemaVersion) ||
     input.backend !== 'firebase' ||
     typeof input.projectId !== 'string' ||
     !input.projectId ||
@@ -76,8 +87,9 @@ export function validateBackup(input) {
     Array.isArray(input.collections)
   )
     throw new Error('INVALID_BACKUP');
-  const allowed =
-    input.schemaVersion === 4 ? audited : input.schemaVersion === 3 ? current : legacy;
+  const allowed = input.schemaVersion === SCHEMA_VERSION
+    ? canonical
+    : input.schemaVersion === 4 ? [...audited, 'admins'] : input.schemaVersion === 3 ? current : legacy;
   const records = [];
   for (const [collection, rows] of Object.entries(input.collections)) {
     if (!allowed.includes(collection) || !Array.isArray(rows))
@@ -85,8 +97,23 @@ export function validateBackup(input) {
     const seen = new Set();
     for (const row of rows) {
       const id = row?.id;
-      const validId =
-        collection === 'students'
+      const validId = input.schemaVersion === SCHEMA_VERSION
+        ? collection === 'admins' || collection.startsWith('legacy')
+          ? /^[A-Za-z0-9_-]{1,128}$/.test(id)
+          : collection === 'typingCertificates'
+            ? /^[0-9a-f]{64}$/.test(id)
+          : collection === 'typingEntries'
+            ? /^[1-3][0-9]{4}$/.test(id) || officialClaim.test(id)
+            : collection === 'settings'
+              ? ['event', 'sessionPolicy', '행사', '세션'].includes(id)
+              : collection === 'challenges'
+                ? /^[a-zA-Z0-9_-]{1,100}$/.test(id)
+            : collection === 'letterLogs'
+              ? /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-restore|-purge)?$/.test(id)
+              : uuid.test(id)
+        : collection === 'admins'
+          ? /^[A-Za-z0-9_-]{1,128}$/.test(id)
+          : collection === 'students'
           ? /^(?:[A-Za-z0-9_-]{20}|\d{7})$/.test(id)
           : collection === 'letterLogs'
             ? /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}(-restore|-purge)?$/.test(
@@ -166,22 +193,55 @@ export async function restoreBackup(
     onProgress = async () => {},
   } = {},
 ) {
-  const records = validateBackup(backup);
+  const inputRecords = validateBackup(backup);
+  const records = inputRecords.map((row) => {
+    if (backup.schemaVersion === SCHEMA_VERSION) {
+      const kind = row.collection;
+      return {
+        kind,
+        collection: collectionPath(kind),
+        id: kind === 'typingEntries' && officialClaim.test(row.id)
+          ? row.id : logicalId(kind, row.id),
+        path: documentPath(kind, row.id),
+        data: decodeData(kind, row.data),
+      };
+    }
+    const destination = legacyDestination(row.collection, row.id, row.data);
+    return {
+      kind: destination.kind,
+      collection: collectionPath(destination.kind),
+      id: destination.kind === 'typingEntries' && officialClaim.test(destination.id)
+        ? destination.id : logicalId(destination.kind, destination.id),
+      path: destination.path,
+      data: encodeData(destination.kind, row.data),
+    };
+  });
+  if (new Set(records.map(row => row.path)).size !== records.length)
+    throw new Error('DUPLICATE_RESTORE_DESTINATION');
+  const parentPaths=new Set();
+  if(records.some((row)=>['challenges','typingResults','typingEntries','typingReceipts','typingCertificates'].includes(row.kind)))
+    parentPaths.add(Object.keys(PARENT_DOCUMENTS).find((path)=>path.startsWith('타자대회/')));
+  if(records.some((row)=>['letters','publicLetters','letterTrash','letterLogs','letterReceipts'].includes(row.kind)))
+    parentPaths.add(Object.keys(PARENT_DOCUMENTS).find((path)=>path.startsWith('글쓰기/')));
+  for(const path of parentPaths){
+    if(path)records.push({kind:'parent',collection:path.split('/').at(-2),id:path.split('/').at(-1),path,
+      data:PARENT_DOCUMENTS[path],parent:true});
+  }
   if (backup.projectId !== db.projectId && !allowProjectChange)
     throw new Error('PROJECT_MISMATCH');
   const preflight = await processRows(
     records,
     concurrency,
     async (row) => {
-      const saved = await db.doc(`${row.collection}/${row.id}`).get();
+      const saved = await db.doc(row.path).get();
       return {
         collection: row.collection,
         id: row.id,
         status: !saved.exists
           ? 'missing'
-          : equivalent(saved.data(), row.data)
-            ? 'unchanged'
-            : 'conflict',
+          : row.parent
+            ? equivalent(saved.data(), row.data) ? 'unchanged' : 'preserved'
+            : equivalent(saved.data(), row.data) ? 'unchanged' : 'conflict',
       };
     },
     onProgress,
@@ -195,13 +255,14 @@ export async function restoreBackup(
     async (row) => {
       try {
         const status = await db.runTransaction(async (tx) => {
-          const ref = db.doc(`${row.collection}/${row.id}`),
+          const ref = db.doc(row.path),
             existing = await tx.get(ref);
           if (existing.exists) {
+            if(row.parent)return equivalent(existing.data(),row.data)?'unchanged':'preserved';
             if (!equivalent(existing.data(), row.data)) throw new Error('DOCUMENT_CONFLICT');
             return 'unchanged';
           }
-          tx.create(ref, decode(row.data, Timestamp));
+          tx.create(ref, row.parent?row.data:decode(row.data, Timestamp));
           return 'restored';
         });
         return { collection: row.collection, id: row.id, status };
@@ -218,6 +279,7 @@ export async function restoreBackup(
   );
   return { applied: true, includesAuthentication: false, results };
 }
+
 async function run() {
   const options = { apply: false, allowProjectChange: false, concurrency: 5 };
   const flags = new Map([

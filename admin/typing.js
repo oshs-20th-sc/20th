@@ -1,10 +1,10 @@
 /** Admin views and actions for typing records. */
-import { adminContext } from '../db/firebase.js?v=ops-20261113';
+import { adminContext } from '../db/firebase.js?v=typing-certificate-1';
 import {
   deleteTyping,
   readTyping,
   reviewTyping,
-} from '../db/database.js?v=typing-fix-20261113';
+} from '../db/database.js?v=typing-certificate-1';
 import { downloadFile, escapeHtml as html } from '../common.js';
 import {
   importResultFile,
@@ -12,7 +12,7 @@ import {
   pendingResults,
   resultsCsv,
   synchronizePending,
-} from '../typing/storage.js?v=typing-fix-20261113';
+} from '../typing/storage.js?v=typing-certificate-1';
 import {
   $,
   confirmDiscard,
@@ -26,9 +26,9 @@ import {
   setStatus,
   submit,
   verification,
-} from './shared.js?v=typing-fix-20261113';
-import { renderTab } from './shared.js?v=typing-fix-20261113';
-import { state } from './state.js?v=typing-fix-20261113';
+} from './shared.js?v=typing-certificate-1';
+import { renderTab } from './shared.js?v=typing-certificate-1';
+import { state } from './state.js?v=typing-certificate-1';
 
 const CURRENT_STUDENT_NUMBER = /^[1-3][0-9]{4}$/;
 
@@ -230,7 +230,7 @@ export function renderResults() {
   document.querySelectorAll('[data-delete]').forEach(
     (button) =>
       (button.onclick = () => {
-        if (!confirm('기록을 삭제할까요? 되돌릴 수 없습니다.')) return;
+        if (!confirm('기록과 연결된 접수 정보를 삭제할까요? 이 기록의 참여 제한도 해제됩니다. 되돌릴 수 없습니다.')) return;
         void run(async () => {
           await deleteTyping((await adminContext()).db, button.dataset.delete);
           await reloadResults();

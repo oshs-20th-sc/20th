@@ -1,8 +1,12 @@
-import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js?v=ops-20261113';
-import { submitTyping, readChallenge, validateTypingResult } from '../db/database.js?v=typing-fix-20261113';
+import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js?v=typing-certificate-1';
+import {
+  submitTyping,
+  readChallenge,
+  validateTypingResult,
+} from '../db/database.js?v=typing-certificate-1';
 
-import { toCsv, validateParticipant } from '../common.js?v=record-entry-1';
-import { rankResults, rankedAttempts } from './scoring.js?v=record-entry-1';
+import { toCsv, validateParticipant } from '../common.js?v=typing-certificate-1';
+import { rankResults, rankedAttempts } from './scoring.js?v=typing-certificate-1';
 
 // Legacy storage identifier is intentionally stable so existing local records survive rebranding.
 const DB_NAME = 'osung-typing';
@@ -192,6 +196,7 @@ export async function importResultFile(input) {
 export async function pendingResults() {
   return (await listLocalResults()).filter((result) => result.syncState !== 'synced');
 }
+
 export async function synchronizePending() {
   await adminContext();
   const pending = await pendingResults();

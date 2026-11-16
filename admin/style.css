@@ -1,0 +1,163 @@
+/* Admin workspace: keep the event grid around the page, with opaque work surfaces. */
+#admin.container {
+  width: min(1360px, calc(100% - 64px));
+  margin: 18px auto 24px;
+  padding: 22px 30px 24px;
+  border: 2px solid var(--ink);
+  border-radius: 24px;
+  background: var(--paper);
+  box-shadow: 0 6px 0 rgba(73, 49, 14, .12);
+}
+#admin[aria-busy="true"] { cursor: progress; }
+#admin > .page-header {
+  align-items: center;
+  gap: 16px;
+  padding-bottom: 14px;
+  border-bottom: 1px solid var(--line);
+}
+#admin > .page-header h1 { font-size: clamp(27px, 3vw, 36px); }
+#admin > .page-header > a {
+  flex-shrink: 0;
+  padding: 8px 14px;
+  border: 1.5px solid var(--ink);
+  border-radius: 10px;
+  background: var(--white);
+  font-size: 13px;
+  font-weight: 750;
+  text-decoration: none;
+}
+#admin > .actions[aria-label="관리 기능"] {
+  gap: 8px;
+  margin: 10px 0 13px;
+}
+#admin > .actions[aria-label="관리 기능"] a {
+  display: inline-flex;
+  min-height: 38px;
+  align-items: center;
+  padding: 7px 13px;
+  border: 1px solid #cbbda5;
+  border-radius: 9px;
+  background: var(--white);
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+  transition: background .12s, border-color .12s;
+}
+#admin > .actions[aria-label="관리 기능"] a:hover { background: #fff0c7; border-color: #b28b4b; }
+#admin > .actions[aria-label="관리 기능"] a[aria-current="page"] {
+  background: #ffe6a5;
+  border-color: #b8893c;
+  color: var(--ink);
+}
+#admin > .section-top {
+  justify-content: flex-end;
+  gap: 12px;
+  margin: 0 0 11px;
+  padding: 6px 10px 6px 14px;
+  border: 1px solid #e1d5bf;
+  border-radius: 11px;
+  background: #fff5df;
+}
+#identity { margin-right: auto; color: var(--muted); font-size: 13px; overflow-wrap: anywhere; }
+#admin #logout { min-height: 34px; padding: 5px 12px; font-size: 12px; }
+#admin .admin-nav {
+  gap: 7px;
+  margin: 0 0 13px;
+  padding: 0 0 10px;
+  border-bottom: 1px solid var(--line);
+}
+#admin .admin-nav a {
+  min-height: 38px;
+  padding: 7px 13px;
+  border: 1px solid #d6c9b2;
+  border-radius: 9px;
+  background: #fffefb;
+  color: var(--text);
+  font-size: 13px;
+  font-weight: 700;
+  text-decoration: none;
+}
+#admin .admin-nav a.active,
+#admin .admin-nav a[aria-current="page"] {
+  border-color: #bd9656;
+  background: #ffe6a5;
+}
+#admin #status:not([hidden]) {
+  margin: 0 0 16px;
+  border: 1px solid #d9cbb3;
+  border-radius: 10px;
+  padding: 11px 14px;
+  background: #fffefb;
+  color: #685739;
+  font-size: 13px;
+}
+#admin #status.error { border-color: #d4a1a0; background: #fff4f1; color: #942c32; }
+#admin #view { min-width: 0; }
+#admin #view > .actions:first-child { margin: 0 0 10px; }
+#admin .panel {
+  min-width: 0;
+  margin: 14px 0;
+  border: 1px solid #d8cbb5;
+  border-radius: 15px;
+  background: var(--white);
+  box-shadow: 0 2px 0 rgba(66, 46, 23, .06);
+}
+#admin .panel h2 { margin-bottom: 14px; font-size: 19px; }
+#admin .panel h3 { margin-top: 18px; font-size: 15px; }
+#admin label { min-width: 0; font-size: 13px; }
+#admin input:not([type='checkbox']):not([type='radio']), #admin textarea, #admin select { min-width: 0; border-color: #c8bcaa; border-radius: 9px; }
+#admin input:not([type='checkbox']):not([type='radio']):focus, #admin textarea:focus, #admin select:focus { border-color: #ae7931; outline-color: #ffe7b3; }
+#admin button { min-height: 38px; padding: 7px 13px; border-radius: 9px; font-size: 13px; }
+#admin button.danger { color: #9c3035; }
+#admin .toolbar {
+  display: grid;
+  grid-template-columns: minmax(180px, 1.15fr) repeat(3, minmax(155px, 1fr)) auto;
+  align-items: end;
+  gap: 10px;
+  margin: 0 0 10px;
+  padding: 12px 14px;
+  border: 1px solid #d8cbb5;
+  border-radius: 14px;
+  background: #fffaf0;
+}
+#admin .toolbar label { margin: 0; }
+#admin .toolbar input, #admin .toolbar select { margin-top: 6px; }
+#admin .table-scroll {
+  max-width: 100%;
+  overflow-x: auto;
+  border: 1px solid #d8cbb5;
+  border-radius: 14px;
+  background: var(--white);
+  scrollbar-color: #c1ad8c #f6eddb;
+}
+#admin table { width: 100%; min-width: 1020px; border-collapse: separate; border-spacing: 0; table-layout: auto; font-size: 13px; }
+#admin table caption { padding: 9px 13px; background: #fff7e6; color: #5f513b; font-size: 12px; font-weight: 700; }
+#admin th, #admin td { padding: 8px 11px; border-bottom: 1px solid #ece3d4; text-align: left; vertical-align: middle; }
+#admin th { position: sticky; top: 0; z-index: 1; background: #fff0ce; color: #55462f; font-size: 12px; }
+#admin tbody tr { background: #fffefb; }
+#admin tbody tr:nth-child(even) { background: #fffaf1; }
+#admin tbody tr:hover { background: #fff3d7; }
+#admin tbody tr:last-child td { border-bottom: 0; }
+#admin td:nth-child(1), #admin td:nth-child(3), #admin td:nth-child(4), #admin td:nth-child(5) { white-space: nowrap; font-variant-numeric: tabular-nums; }
+#admin td:nth-child(2) { min-width: 150px; font-weight: 700; }
+#admin td:nth-child(2) small { margin-top: 3px; color: var(--muted); font-weight: 500; }
+#admin td select { width: 142px; min-height: 36px; padding: 6px 9px; font-size: 12px; }
+#admin td button { white-space: nowrap; }
+#admin #pagination { justify-content: center; gap: 10px; margin: 10px 0; color: var(--muted); font-size: 13px; }
+#admin details.panel { padding: 12px 16px; }
+#admin details.panel summary { font-size: 14px; }
+#admin details.panel > p { color: var(--muted); font-size: 13px; }
+#admin .record { padding: 15px 16px; border: 1px solid #e4d9c6; border-radius: 12px; background: #fffaf1; }
+#admin .record + .record { margin-top: 10px; }
+#admin .letter-content { max-height: 11em; overflow: auto; padding: 11px 13px; border: 1px solid #ece2d0; border-radius: 9px; background: #fffefb; }
+#admin .actions { gap: 8px; }
+#admin .form-grid { gap: 14px; }
+#admin #operators { padding-left: 20px; }
+#admin #operators li { padding: 8px 0; border-bottom: 1px solid #eee5d7; }
+#admin code { font-size: 12px; }
+@media (max-width: 1120px) {
+  #admin.container { width: calc(100% - 40px); padding: 24px; }
+  #admin .toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  #admin .toolbar > button { grid-column: 2; justify-self: end; }
+}

@@ -1,76 +1,62 @@
 <!doctype html>
 <html lang="ko">
-  <head>
-    <meta charset="utf-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1" />
-    <title>타자 대회</title>
-    <link rel="stylesheet" href="../style.css" />
-    <link rel="stylesheet" href="./style.css?v=login-layout-1" />
-    <script type="module" src="./app.js?v=typing-fix-20261113"></script>
-  </head>
-  <body>
-    <main class="container">
-      <header class="page-header">
-        <h1>타자 대회</h1>
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <meta name="theme-color" content="#ffdf87" />
+  <title>타자 대회 | 20대 학생회</title>
+  <link rel="stylesheet" href="../style.css?v=checkbox-fix-1" />
+  <link rel="stylesheet" href="./style.css?v=typing-input-5" />
+  <script type="module" src="./app.js?v=typing-layout-2"></script>
+</head>
+<body class="inside-page typing-page">
+  <main class="container">
+    <div class="typing-shell">
+      <header class="typing-header">
+        <div class="typing-heading">
+          <h1>타자 대회</h1>
+          <p>문구를 정확히 완성해 주세요.</p>
+        </div>
+        <aside class="mascot-aside" aria-label="입력에 반응하는 오별이">
+          <div id="obyeol" class="obyeol" data-mood="idle"></div>
+          <p id="obyeol-message">준비됐어요!</p>
+        </aside>
+        <div id="login"></div>
       </header>
-      <div id="login"></div>
       <div id="student-view" hidden>
         <p id="event-status" role="status" hidden></p>
         <button id="reload" type="button" hidden>다시 불러오기</button>
-        <section class="panel" aria-labelledby="challenge-title">
-          <div class="section-top">
-            <h2 id="challenge-title">문구</h2>
-            <span id="attempt-status"></span>
-          </div>
+        <section class="stage-panel" aria-labelledby="challenge-title">
+          <div class="section-top"><h2 id="challenge-title">문구</h2><span id="attempt-status" class="attempt-state" role="status"></span></div>
           <dl class="metrics" aria-live="off">
-            <div>
-              <dt>시간 (초)</dt>
-              <dd id="elapsed">0.0</dd>
-            </div>
-            <div>
-              <dt>누적 오타</dt>
-              <dd id="errors">0</dd>
-            </div>
-            <div>
-              <dt>점수</dt>
-              <dd id="score">—</dd>
-            </div>
+            <div><dt>시간 (초)</dt><dd id="elapsed">0.0</dd></div>
+            <div><dt>누적 오타</dt><dd id="errors">0</dd></div>
+            <div><dt>점수</dt><dd id="score">—</dd></div>
           </dl>
           <p id="challenge" class="challenge" aria-label="입력할 문구"></p>
           <label for="typing-input">문구 입력</label>
-          <textarea
-            id="typing-input"
-            rows="5"
-            disabled
-            spellcheck="false"
-            autocomplete="off"
-            autocorrect="off"
-            autocapitalize="off"
-            aria-describedby="feedback"
-          ></textarea>
-          <p id="feedback" role="status">문구를 입력하면 측정이 시작됩니다.</p>
+          <textarea id="typing-input" rows="3" disabled spellcheck="false" autocomplete="off" autocorrect="off" autocapitalize="off" aria-describedby="feedback"></textarea>
+          <p id="feedback" role="status"></p>
           <p id="result" hidden></p>
-          <div class="actions">
-            <button id="retry" type="button" hidden>저장 재시도</button>
-            <button id="rescue" type="button" hidden>기록 파일 저장</button>
-            <button id="rescue-confirm" type="button" hidden>파일 저장 완료</button>
-          </div>
+          <div class="actions"><button id="retry" type="button" hidden>저장 재시도</button><button id="rescue" type="button" hidden>기록 파일 저장</button><button id="rescue-confirm" type="button" hidden>파일 저장 완료</button><button id="show-record" type="button" hidden>타자 기록증 보기</button></div>
         </section>
-        <details class="panel">
-          <summary>채점 규칙</summary>
-          <ul>
-            <li>첫 입력부터 측정하며, 문구를 정확히 완성하면 종료합니다.</li>
-            <li>
-              분당 타수 = 기준 <span id="reference-keys">—</span>타 × 60 ÷ 소요 초.
-              반올림합니다.
-            </li>
-            <li>두벌식 기준입니다. Shift는 제외하고 공백·문장부호는 각각 1타입니다.</li>
-            <li>새로 확정한 오타마다 <span id="error-penalty">—</span>점 감점합니다. 지우는 동작은 추가 감점하지 않으며, 기존 감점은 유지합니다. 최저 점수는 0점입니다.</li>
-            <li>동점은 오타 수, 소요 시간 순입니다. 모두 같으면 공동 순위입니다.</li>
-            <li>붙여넣기와 끌어놓기를 차단합니다. 측정 중 창을 벗어나면 중단합니다.</li>
-          </ul>
-        </details>
+
       </div>
-    </main>
-  </body>
+    </div>
+  </main>
+  <dialog id="record-dialog" aria-labelledby="record-title" aria-describedby="record-save-status">
+    <article class="record-card">
+      <header class="record-header"><div><p>천안오성고등학교 · 20대 학생회</p><h2 id="record-title">타자 기록증</h2></div><button id="record-close" type="button" aria-label="타자 기록증 닫기" autofocus>닫기 <span aria-hidden="true">×</span></button></header>
+      <div class="record-body">
+        <div class="record-photo"><div id="record-obyeol" class="obyeol" data-mood="complete"></div><span>입력 완료!</span></div>
+        <div class="record-information">
+          <dl class="record-identity"><div><dt>학번</dt><dd id="record-student"></dd></div><div><dt>이름</dt><dd id="record-name"></dd></div></dl>
+          <div class="record-score"><span>최종 점수</span><strong id="record-score"></strong><span>점</span></div>
+          <dl class="record-stats"><div><dt>분당 타수</dt><dd><strong id="record-speed"></strong> 타</dd></div><div><dt>누적 오타</dt><dd><strong id="record-errors"></strong> 회</dd></div><div><dt>소요 시간</dt><dd><strong id="record-time"></strong> 초</dd></div></dl>
+        </div>
+      </div>
+      <footer class="record-footer"><p id="record-save-status" role="status" data-state="saving">서버에 기록을 저장하고 있어요.</p><button id="record-return" type="button">기록 화면으로 돌아가기</button></footer>
+    </article>
+  </dialog>
+</body>
 </html>
