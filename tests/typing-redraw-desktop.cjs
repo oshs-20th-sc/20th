@@ -115,6 +115,7 @@ assert.equal(await returning.locator('#record-save-status').isVisible(),false);
 assert.equal(await returning.locator('#record-dialog').getAttribute('aria-describedby'),null);
 assert.equal(await returning.locator('#typing-input').isDisabled(),true);
 assert.equal(await returning.locator('#typing-input').inputValue(),'가나');
+assert.equal(await returning.locator('#student-session').evaluate(el=>getComputedStyle(el).borderTopWidth),'0px');
 assert.equal(await returning.locator('#record-score').textContent(),'294');
 assert.equal(await returning.locator('#record-time').textContent(),'12.35');
 assert.equal(await returning.evaluate(()=>window.__record),undefined);
@@ -133,6 +134,7 @@ await returning.evaluate(value=>window.__releaseCertificateLookup(value),certifi
 assert.equal(await returning.locator('#record-dialog').isVisible(),false);
 assert.equal(await returning.locator('#typing-input').isEnabled(),true);
 assert((await returning.locator('#student-name').textContent()).includes('다음참가자'));
+assert.equal(await returning.locator('#student-session').evaluate(el=>getComputedStyle(el).borderTopWidth),'1px');
 await returning.close();
 // Writing keeps comfortable controls and a generous textarea, without excess sections.
 const writing=await browser.newPage({viewport:{width:1366,height:768}});

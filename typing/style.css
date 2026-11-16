@@ -222,6 +222,7 @@
 .typing-page .login-panel input { min-height: 43px; padding-block: 9px; }
 .typing-page .login-panel button[type='submit'] { min-height: 43px; margin-top: 16px; }
 .typing-page #student-session { justify-content: flex-start; flex-wrap: wrap; width: fit-content; min-height: 42px; margin: 0; padding: 5px 10px; border: 1px solid var(--line); background: #fff4d8; gap: 14px; }
+.typing-page #student-session:has(#student-name:empty) { min-height: 30px; padding: 0; border: 0; background: transparent; }
 .typing-page #student-session button { margin: 0; }
 .metrics { margin: 10px 0; gap: 8px; }
 .metrics > div { padding: 7px 12px; }
