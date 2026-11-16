@@ -1,13 +1,14 @@
 /* One shell keeps the title, participant and typing area aligned at every stage. */
 .typing-page .container { width: min(1080px, calc(100% - 48px)); padding: 22px 0 18px; }
+.typing-page.has-participant .container { min-height: 100svh; display: flex; flex-direction: column; justify-content: center; padding-block: 16px; }
 .typing-page .inside-nav { margin-bottom: 18px; }
 .typing-page:not(.has-participant) .container { width: min(460px, calc(100% - 48px)); min-height: 100vh; display: grid; grid-template-rows: 1fr auto 1fr; }
 .typing-page:not(.has-participant) .container::before { content: ""; }
-.typing-shell { width: 100%; padding: 25px 28px 22px; background: var(--paper); border: 2px solid var(--ink); border-radius: 24px; box-shadow: 0 6px 0 #6b4b201a; }
+.typing-shell { flex-shrink: 0; width: 100%; padding: 25px 28px 22px; background: var(--paper); border: 2px solid var(--ink); border-radius: 24px; box-shadow: 0 6px 0 #6b4b201a; }
 .typing-page:not(.has-participant) .typing-shell { width: 100%; justify-self: center; }
 .typing-header { display: grid; grid-template-columns: minmax(0, 1fr) 260px; gap: 0 18px; }
 .typing-page:not(.has-participant) .typing-header { grid-template-columns: minmax(0, 1fr) 120px; }
-.has-participant .typing-header { border-bottom: 1px solid var(--line); margin-bottom: 14px; padding-bottom: 12px; }
+.has-participant .typing-header { border-bottom: 1px solid var(--line); margin-bottom: 16px; padding-bottom: 14px; }
 .typing-heading { grid-column: 1; grid-row: 1; align-self: center; padding-bottom: 12px; }
 .typing-heading h1 { font-size: 30px; }
 .typing-heading > p:last-child { margin: 9px 0 0; font-size: 13px; color: var(--muted); }
@@ -205,6 +206,7 @@
 /* Compact controls make room for Obyeol without clipping the prompt. */
 .typing-page .container { padding-top: 16px; padding-bottom: 12px; }
 .typing-shell { padding: 18px 22px 16px; }
+.has-participant .typing-shell { padding: 22px 24px 20px; }
 .typing-heading h1 { font-size: 28px; }
 .typing-heading > p:last-child { margin-top: 6px; font-size: 12px; }
 .has-participant .typing-heading { align-self: end; padding: 0 0 12px; margin: 0; }
@@ -219,7 +221,7 @@
 .typing-page .login-panel h2 { font-size: 20px; margin-bottom: 12px; }
 .typing-page .login-panel input { min-height: 43px; padding-block: 9px; }
 .typing-page .login-panel button[type='submit'] { min-height: 43px; margin-top: 16px; }
-.typing-page #student-session { justify-content: flex-start; flex-wrap: wrap; width: fit-content; min-height: 30px; margin: 0; padding: 0; border: 0; background: transparent; gap: 12px; }
+.typing-page #student-session { justify-content: flex-start; flex-wrap: wrap; width: fit-content; min-height: 42px; margin: 0; padding: 5px 10px; border: 1px solid var(--line); background: #fff4d8; gap: 14px; }
 .typing-page #student-session button { margin: 0; }
 .metrics { margin: 10px 0; gap: 8px; }
 .metrics > div { padding: 7px 12px; }

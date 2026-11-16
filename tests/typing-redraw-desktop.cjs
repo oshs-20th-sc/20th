@@ -85,8 +85,8 @@ await page.waitForFunction(()=>document.querySelector('#typing-input').getBoundi
 for(const [width,height] of [[1366,768],[1710,1060]]){
  await page.setViewportSize({width,height});
  await page.waitForFunction(()=>document.querySelector('#typing-input').getBoundingClientRect().height>=document.querySelector('#challenge').getBoundingClientRect().height);
- const layout=await page.evaluate(()=>{const input=document.querySelector('#typing-input').getBoundingClientRect(),challenge=document.querySelector('#challenge').getBoundingClientRect();return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,inputBottom:input.bottom,inputHeight:input.height,challengeHeight:challenge.height}});
- assert.equal(layout.overflow,false);assert(layout.inputBottom<height);measurements.push({typing:layout});
+ const layout=await page.evaluate(()=>{const input=document.querySelector('#typing-input').getBoundingClientRect(),challenge=document.querySelector('#challenge').getBoundingClientRect(),shell=document.querySelector('.typing-shell').getBoundingClientRect();return {width:innerWidth,overflow:document.documentElement.scrollWidth>innerWidth,inputBottom:input.bottom,inputHeight:input.height,challengeHeight:challenge.height,shellTop:shell.top,shellBottom:shell.bottom,centerDelta:Math.abs((shell.top+shell.bottom)/2-innerHeight/2)}});
+ assert.equal(layout.overflow,false);assert(layout.inputBottom<height);assert(layout.centerDelta<1);assert(layout.shellTop>=15);measurements.push({typing:layout});
  await page.screenshot({path:`${out}/typing-spacious-${width}.png`,animations:'disabled'});
 }
 await page.setViewportSize({width:1366,height:768});
@@ -142,6 +142,8 @@ await writing.route('**/db/public.js*',r=>r.fulfill({contentType:'text/javascrip
 await writing.route('**/db/database.js*',r=>r.fulfill({contentType:'text/javascript',body:'export const submitLetter=async()=>{throw Error("This visual test must not submit letters")};'}));
 await writing.goto('http://127.0.0.1:5176/write/');await writing.locator('#submit:not(:disabled)').waitFor();
 assert.equal(await writing.locator('#student-number').getAttribute('placeholder'),'학번');
+const meta=await writing.evaluate(()=>{const privacy=document.querySelector('#privacy'),counter=document.querySelector('#content-count'),p=privacy.getBoundingClientRect(),c=counter.getBoundingClientRect();return {sameRow:privacy.parentElement===counter.parentElement,topDelta:Math.abs(p.top-c.top),space:c.left-p.right}});
+assert(meta.sameRow);assert(meta.topDelta<1);assert(meta.space>=19);
 await writing.locator('#content').fill('안녕하세요');await writing.waitForFunction(()=>document.querySelector('#content-count').textContent==='5자');
 const writeLayout=await writing.evaluate(()=>({height:document.documentElement.scrollHeight,overflow:document.documentElement.scrollWidth>innerWidth,input:document.querySelector('#student-number').getBoundingClientRect().height,textarea:document.querySelector('#content').getBoundingClientRect().height}));
 assert.equal(writeLayout.overflow,false);assert(writeLayout.input>=47);assert(writeLayout.textarea>=220);assert(writeLayout.height<960);

@@ -1,19 +1,24 @@
 <!doctype html>
 <html lang="ko">
+
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <meta name="theme-color" content="#ffdf87" />
   <title>글쓰기 | 20대 학생회</title>
   <link rel="stylesheet" href="../style.css?v=checkbox-fix-1" />
-  <link rel="stylesheet" href="./style.css?v=checkbox-fix-1" />
+  <link rel="stylesheet" href="./style.css?v=writing-meta-1" />
   <script type="module" src="./app.js?v=typing-certificate-1"></script>
 </head>
+
 <body class="inside-page write-page">
   <main class="container narrow-container">
     <div class="inside-nav"><span class="inside-brand">20대 학생회</span></div>
     <header class="page-header page-intro">
-      <div class="page-intro-copy"><h1>글쓰기</h1><p>전하고 싶은 글을 작성해 주세요.<br />제출된 글은 검토 후 공개될 수 있습니다.</p></div>
+      <div class="page-intro-copy">
+        <h1>글쓰기</h1>
+        <p>전하고 싶은 글을 작성해 주세요.<br />제출된 글은 검토 후 공개될 수 있습니다.</p>
+      </div>
       <div class="page-mascot"><img src="../assets/obyeol.svg?v=brighter-2" alt="오별이" width="460" height="480" /></div>
     </header>
     <p id="event-status" role="status">접수 상태 확인 중</p>
@@ -21,21 +26,35 @@
     <p id="error" class="error" role="alert" hidden></p>
     <section id="editor" class="panel form-panel" aria-label="글 작성">
       <form id="write-form" novalidate>
-        <div class="form-grid"><div><label for="student-number">학번</label><input id="student-number" name="studentNumber" inputmode="numeric" autocomplete="off" maxlength="5" placeholder="학번" required /></div><div><label for="student-name">이름</label><input id="student-name" name="name" autocomplete="off" maxlength="30" placeholder="이름" required /></div></div>
+        <div class="form-grid">
+          <div><label for="student-number">학번</label><input id="student-number" name="studentNumber" inputmode="numeric"
+              autocomplete="off" maxlength="5" placeholder="학번" required /></div>
+          <div><label for="student-name">이름</label><input id="student-name" name="name" autocomplete="off"
+              maxlength="30" placeholder="이름" required /></div>
+        </div>
         <label for="nickname">별명 <span class="optional-label">(선택)</span></label>
         <input id="nickname" name="nickname" autocomplete="off" placeholder="공개할 별명" aria-describedby="nickname-help" />
         <p id="nickname-help" class="muted">최대 30자 · 미입력 시 익명</p>
         <label for="content">본문</label>
-        <textarea id="content" name="content" rows="8" placeholder="내용을 입력해 주세요." required aria-describedby="content-count privacy"></textarea>
-        <p id="content-count" class="muted">0자</p>
-        <p id="privacy" class="muted">개인정보를 입력하지 마세요. 승인된 글과 별명은 공개됩니다.</p>
-        <label class="checkbox consent-check"><input id="consent" name="consent" type="checkbox" required /> 공개 동의 (필수)</label>
+        <textarea id="content" name="content" rows="8" placeholder="내용을 입력해 주세요." required
+          aria-describedby="content-count privacy"></textarea>
+        <div class="content-meta">
+          <p id="privacy" class="muted">개인정보를 입력하지 마세요. 승인된 글과 별명은 공개됩니다.</p>
+          <p id="content-count" class="muted">0자</p>
+        </div>
+        <label class="checkbox consent-check"><input id="consent" name="consent" type="checkbox" required /> 공개 동의
+          (필수)</label>
         <p id="pending-status" class="notice" role="status" hidden>접수 확인 전입니다. 같은 내용으로 다시 제출할 수 있습니다.</p>
-        <div class="actions"><button id="submit" type="submit" class="primary" disabled>제출하기</button><button id="clear-form" type="button" disabled>초기화</button></div>
+        <div class="actions"><button id="submit" type="submit" class="primary" disabled>제출하기</button><button
+            id="clear-form" type="button" disabled>초기화</button></div>
       </form>
     </section>
-    <section id="complete" class="panel complete-panel" tabindex="-1" aria-labelledby="complete-title" hidden><h2 id="complete-title">접수 완료</h2><p>글이 접수되었습니다.</p><button id="new-letter" type="button">새 글 작성</button></section>
+    <section id="complete" class="panel complete-panel" tabindex="-1" aria-labelledby="complete-title" hidden>
+      <h2 id="complete-title">접수 완료</h2>
+      <p>글이 접수되었습니다.</p><button id="new-letter" type="button">새 글 작성</button>
+    </section>
     <noscript>JavaScript를 활성화해 주세요.</noscript>
   </main>
 </body>
+
 </html>
