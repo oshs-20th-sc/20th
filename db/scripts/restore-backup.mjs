@@ -16,7 +16,6 @@ import {
   collectionPath,
   documentPath,
   encodeData,
-  decodeData,
   legacyDestination,
   logicalId,
 } from '../schema.js';
@@ -33,7 +32,7 @@ const current = [...legacy, 'students', 'moderationLogs'];
 const audited = [...current, 'letterTrash', 'letterLogs'];
 const canonical = Object.keys(COLLECTIONS);
 const uuid = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
-const officialClaim = /^official-20261123-[1-3][0-9]{4}$/;
+const legacyOfficialClaim = /^official-\d{8}-([1-3][0-9]{4})$/;
 function validValue(value, depth = 0) {
   if (depth > 20) throw new Error('BACKUP_TOO_DEEP');
   if (value === null || typeof value === 'string' || typeof value === 'boolean') return;
@@ -77,7 +76,7 @@ function validValue(value, depth = 0) {
 export function validateBackup(input) {
   if (
     !input ||
-    ![2, 3, 4, SCHEMA_VERSION].includes(input.schemaVersion) ||
+    ![2, 3, 4, 5, SCHEMA_VERSION].includes(input.schemaVersion) ||
     input.backend !== 'firebase' ||
     typeof input.projectId !== 'string' ||
     !input.projectId ||
@@ -87,7 +86,8 @@ export function validateBackup(input) {
     Array.isArray(input.collections)
   )
     throw new Error('INVALID_BACKUP');
-  const allowed = input.schemaVersion === SCHEMA_VERSION
+  const currentSchema = input.schemaVersion >= 5;
+  const allowed = currentSchema
     ? canonical
     : input.schemaVersion === 4 ? [...audited, 'admins'] : input.schemaVersion === 3 ? current : legacy;
   const records = [];
@@ -97,13 +97,13 @@ export function validateBackup(input) {
     const seen = new Set();
     for (const row of rows) {
       const id = row?.id;
-      const validId = input.schemaVersion === SCHEMA_VERSION
+      const validId = currentSchema
         ? collection === 'admins' || collection.startsWith('legacy')
           ? /^[A-Za-z0-9_-]{1,128}$/.test(id)
           : collection === 'typingCertificates'
             ? /^[0-9a-f]{64}$/.test(id)
           : collection === 'typingEntries'
-            ? /^[1-3][0-9]{4}$/.test(id) || officialClaim.test(id)
+            ? /^[1-3][0-9]{4}$/.test(id) || legacyOfficialClaim.test(id)
             : collection === 'settings'
               ? ['event', 'sessionPolicy', '행사', '세션'].includes(id)
               : collection === 'challenges'
@@ -123,7 +123,7 @@ export function validateBackup(input) {
               ? ['event', 'sessionPolicy'].includes(id)
               : collection === 'challenges'
                 ? /^[a-zA-Z0-9_-]{1,100}$/.test(id)
-                : uuid.test(id) || (collection === 'receipts' && officialClaim.test(id));
+              : uuid.test(id) || (collection === 'receipts' && legacyOfficialClaim.test(id));
       if (
         typeof id !== 'string' ||
         !validId ||
@@ -136,12 +136,21 @@ export function validateBackup(input) {
         throw new Error('INVALID_BACKUP_DOCUMENT');
       seen.add(id);
       validValue(row.data);
-      if (collection === 'receipts' && officialClaim.test(id)) {
+      if (collection === 'typingEntries' && legacyOfficialClaim.test(id)) {
+        const number = legacyOfficialClaim.exec(id)[1];
+        if (
+          Object.keys(row.data).sort().join(',') !== '기록ID,생성시각,접수종류,학번' ||
+          row.data['접수종류'] !== 'typingEntry' || !uuid.test(row.data['기록ID']) ||
+          row.data['학번'] !== number || row.data['생성시각']?.__firestoreTimestamp !== true
+        ) throw new Error('INVALID_OFFICIAL_CLAIM');
+      }
+      if (collection === 'receipts' && legacyOfficialClaim.test(id)) {
+        const number = legacyOfficialClaim.exec(id)[1];
         if (
           Object.keys(row.data).sort().join(',') !== 'created_at,kind,result_id,student_number' ||
           row.data.kind !== 'typingEntry' || !uuid.test(row.data.result_id) ||
           typeof row.data.student_number !== 'string' ||
-          id !== `official-20261123-${row.data.student_number}` ||
+          number !== row.data.student_number ||
           row.data.created_at?.__firestoreTimestamp !== true
         ) throw new Error('INVALID_OFFICIAL_CLAIM');
       }
@@ -195,23 +204,23 @@ export async function restoreBackup(
 ) {
   const inputRecords = validateBackup(backup);
   const records = inputRecords.map((row) => {
-    if (backup.schemaVersion === SCHEMA_VERSION) {
+    if (backup.schemaVersion >= 5) {
       const kind = row.collection;
       return {
         kind,
         collection: collectionPath(kind),
-        id: kind === 'typingEntries' && officialClaim.test(row.id)
-          ? row.id : logicalId(kind, row.id),
+        id: logicalId(kind, row.id),
         path: documentPath(kind, row.id),
-        data: decodeData(kind, row.data),
+        // v5 and later backups already contain persisted Korean fields.
+        // Only the document path/legacy claim ID needs normalization here.
+        data: row.data,
       };
     }
     const destination = legacyDestination(row.collection, row.id, row.data);
     return {
       kind: destination.kind,
       collection: collectionPath(destination.kind),
-      id: destination.kind === 'typingEntries' && officialClaim.test(destination.id)
-        ? destination.id : logicalId(destination.kind, destination.id),
+      id: logicalId(destination.kind, destination.id),
       path: destination.path,
       data: encodeData(destination.kind, row.data),
     };

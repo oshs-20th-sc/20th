@@ -1,10 +1,10 @@
 /** Admin views and actions for typing records. */
-import { adminContext } from '../db/firebase.js?v=typing-certificate-1';
+import { adminContext } from '../db/firebase.js?v=record-time-1';
 import {
   deleteTyping,
   readTyping,
   reviewTyping,
-} from '../db/database.js?v=typing-certificate-1';
+} from '../db/database.js?v=record-time-1';
 import { downloadFile, escapeHtml as html } from '../common.js';
 import {
   importResultFile,
@@ -12,7 +12,7 @@ import {
   pendingResults,
   resultsCsv,
   synchronizePending,
-} from '../typing/storage.js?v=typing-certificate-1';
+} from '../typing/storage.js?v=record-time-1';
 import {
   $,
   confirmDiscard,
@@ -25,10 +25,9 @@ import {
   select,
   setStatus,
   submit,
-  verification,
-} from './shared.js?v=typing-certificate-1';
-import { renderTab } from './shared.js?v=typing-certificate-1';
-import { state } from './state.js?v=typing-certificate-1';
+} from './shared.js?v=record-time-1';
+import { renderTab } from './shared.js?v=record-time-1';
+import { state } from './state.js?v=record-time-1';
 
 const CURRENT_STUDENT_NUMBER = /^[1-3][0-9]{4}$/;
 
@@ -36,6 +35,17 @@ function isRecordEntry(result) {
   return result?.entryMode === 'record' ||
     result?.entry_mode === 'record' ||
     CURRENT_STUDENT_NUMBER.test(result?.participantId ?? '');
+}
+
+const recordClock = new Intl.DateTimeFormat('en-GB', {
+  timeZone: 'Asia/Seoul', month: '2-digit', day: '2-digit',
+  hour: '2-digit', minute: '2-digit', hourCycle: 'h23',
+});
+export function recordTime(value) {
+  const date = new Date(value);
+  if (!value || !Number.isFinite(date.getTime())) return '—';
+  const parts = Object.fromEntries(recordClock.formatToParts(date).map(({ type, value }) => [type, value]));
+  return `${parts.month}/${parts.day} ${parts.hour}:${parts.minute}`;
 }
 
 export async function recordsView() {
@@ -49,7 +59,6 @@ export async function recordsView() {
           item.title,
         ]),
       ])}
-      ${select('verification', '확인 상태', state.resultFilter.verification, [['all', '전체'], ...Object.entries(verification)])}
       ${select('view', '보기', state.resultFilter.view, [
         ['ranking', '학번별 최고 기록'],
         ['attempts', '전체 시도'],
@@ -150,9 +159,7 @@ export function scopedResults(records = state.results) {
   return records
     .filter(
       (item) =>
-        (!state.resultFilter.version || item.challengeId === state.resultFilter.version) &&
-        (state.resultFilter.verification === 'all' ||
-          item.verificationStatus === state.resultFilter.verification),
+        !state.resultFilter.version || item.challengeId === state.resultFilter.version,
     )
     .map((item) => ({
       ...item,
@@ -177,7 +184,7 @@ export function renderResults() {
     }
   });
   $('#result-list').innerHTML =
-    `<table><caption>${ranking ? '학번별 최고 기록 · 점수 → 오타 → 시간' : '전체 시도 · 최근순'}</caption><thead><tr>${ranking ? '<th>순위</th>' : ''}<th>참가자</th><th>점수</th><th>타수·오타</th><th>시간</th><th>확인</th><th>상품</th><th>관리</th></tr></thead><tbody>${
+    `<table><caption>${ranking ? '학번별 최고 기록 · 점수 → 오타 → 시간' : '전체 시도 · 최근순'}</caption><thead><tr>${ranking ? '<th>순위</th>' : ''}<th>참가자</th><th>점수</th><th>타수·오타</th><th>시간</th><th>일시</th><th>상품</th><th>관리</th></tr></thead><tbody>${
       records
         .map(
           (item) => {
@@ -188,34 +195,14 @@ export function renderResults() {
             const identityNote = isRecordEntry(item) ? `${identity} · 직접 입력` : identity;
             return `<tr>
     ${ranking ? `<td>${item.rank ?? '—'}</td>` : ''}<td>${html(item.displayName)}<small>${html(identityNote)}${duplicate ? ' · 학번 중복 확인' : ''}</small></td><td>${item.score}</td><td>${item.speed} / ${item.errors}</td><td>${(item.elapsedMs / 1000).toFixed(2)}초</td>
-    <td>${select(`review-${item.id}`, '확인', item.verificationStatus ?? 'pending', Object.entries(verification))}</td>
-    <td><button data-prize="${item.id}"${item.practice || item.verificationStatus !== 'verified' ? ' disabled' : ''}>${item.prizeReceived ? '수령' : '미수령'}</button></td>
+    <td>${html(recordTime(item.receivedAt || item.completedAt))}</td>
+    <td><button data-prize="${item.id}"${item.practice || item.verificationStatus === 'rejected' ? ' disabled' : ''}>${item.prizeReceived ? '수령' : '미수령'}</button></td>
     <td><button class="danger" data-delete="${item.id}">기록 삭제</button></td></tr>`;
           },
         )
         .join('') ||
-      `<tr><td colspan="${ranking ? 8 : 7}">${ranking && state.resultFilter.verification === 'rejected' ? '제외 기록은 전체 시도에서 확인할 수 있습니다.' : '기록 없음'}</td></tr>`
+      `<tr><td colspan="${ranking ? 8 : 7}">기록 없음</td></tr>`
     }</tbody></table>`;
-  document.querySelectorAll('[name^="review-"]').forEach(
-    (control) =>
-      (control.onchange = () =>
-        void run(async () => {
-          const id = control.name.slice(7);
-          const patch = {
-            verificationStatus: control.value,
-            ...(control.value !== 'verified' ? { prizeReceived: false } : {}),
-          };
-          try {
-            await reviewTyping((await adminContext()).db, id, patch);
-          } catch (reason) {
-            control.value =
-              state.results.find((item) => item.id === id)?.verificationStatus ?? 'pending';
-            throw reason;
-          }
-          await reloadResults();
-          setStatus('저장 완료');
-        })),
-  );
   document.querySelectorAll('[data-prize]').forEach(
     (button) =>
       (button.onclick = () =>

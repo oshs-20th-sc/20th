@@ -1,7 +1,7 @@
 /** Shared state helpers and admin UI primitives. */
-import { adminContext, errorMessage } from '../db/firebase.js?v=typing-certificate-1';
+import { adminContext, errorMessage } from '../db/firebase.js?v=record-time-1';
 import { escapeHtml as html } from '../common.js';
-import { state, feature } from './state.js?v=typing-certificate-1';
+import { state, feature } from './state.js?v=record-time-1';
 
 export const root = document.querySelector('#admin');
 
@@ -14,8 +14,6 @@ export const firstTab = feature === 'typing' ? 'records' : 'letters';
 export const $ = (selector, scope = document) => scope.querySelector(selector);
 
 export const labels = { pending: '검토 대기', approved: '승인', rejected: '제외' };
-
-export const verification = { pending: '확인 대기', verified: '확인', rejected: '제외' };
 
 export const LIST_CACHE_TTL = 60000;
 

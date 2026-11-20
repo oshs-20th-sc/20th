@@ -8,7 +8,7 @@ const { initializeTestEnvironment } = require('@firebase/rules-unit-testing');
 
 const projectId = 'demo-ohsung';
 const baseUrl = 'http://127.0.0.1:5176';
-const eventId = '2026-11-23';
+const eventId = '기본';
 const challengeId = 'schema-flow-desktop';
 const phrase = '가';
 const targetStudent = '20103';

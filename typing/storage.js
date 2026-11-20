@@ -1,9 +1,9 @@
-import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js?v=typing-certificate-1';
+import { adminContext, getPublicDb, firebaseError } from '../db/firebase.js?v=record-time-1';
 import {
   submitTyping,
   readChallenge,
   validateTypingResult,
-} from '../db/database.js?v=typing-certificate-1';
+} from '../db/database.js?v=record-time-1';
 
 import { toCsv, validateParticipant } from '../common.js?v=typing-certificate-1';
 import { rankResults, rankedAttempts } from './scoring.js?v=typing-certificate-1';

@@ -1,8 +1,8 @@
 import { mountObyeol } from './obyeol.js?v=typing-certificate-1';
 import { mountRecordCard } from './record-card.js?v=typing-layout-2';
-import { getPublicDb, errorMessage } from '../db/firebase.js?v=typing-certificate-1';
-import { readEvent, readChallenge, readTypingCertificate } from '../db/database.js?v=typing-certificate-1';
-import { mountLogin } from '../login.js?v=typing-certificate-1';
+import { getPublicDb, errorMessage } from '../db/firebase.js?v=record-time-1';
+import { readEvent, readChallenge, readTypingCertificate } from '../db/database.js?v=record-time-1';
+import { mountLogin } from '../login.js?v=record-time-1';
 import { downloadFile } from '../common.js?v=typing-certificate-1';
 import {
   initialInputState,
@@ -12,7 +12,7 @@ import {
   isComplete,
 } from './engine.js?v=typing-certificate-1';
 import { calculateScore, EVENT_ERROR_PENALTY } from './scoring.js?v=typing-certificate-1';
-import { saveResult } from './storage.js?v=typing-certificate-1';
+import { saveResult } from './storage.js?v=record-time-1';
 
 const elements = Object.fromEntries(
   [

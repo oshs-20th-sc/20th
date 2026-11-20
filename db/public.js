@@ -8,10 +8,10 @@ import {
   orderBy,
   query,
   startAfter,
-} from './store.js?v=typing-certificate-1';
+} from './store.js?v=record-time-1';
 import { UUID_PATTERN } from '../common.js';
 import { CHALLENGE } from '../typing/challenge.js?v=typing-certificate-1';
-import { ClientError, withDeadline } from './firebase.js?v=typing-certificate-1';
+import { ClientError, withDeadline } from './firebase.js?v=record-time-1';
 
 function publicLetter(snapshot) {
   const data = snapshot.data();

@@ -21,7 +21,7 @@ try{
  await assertSucceeds(submit(value));
  assert.equal((await assertSucceeds(ref(pub,'typingCertificates',key).get())).data()['최종점수'],14);
  assert.equal((await assertSucceeds(ref(pub,'typingCertificates',await typingCertificateKey('20101','다른이름')).get())).exists,false);
- await assertFails(pub.collection('타자대회/2026-11-23/기록증').get());
+ await assertFails(pub.collection('타자대회/기본/기록증').get());
  await assertFails(ref(pub,'typingResults',value.id).get());await assertFails(ref(pub,'typingEntries','20101').get());
  await assertFails(ref(pub,'typingCertificates',key).update({'최종점수':99}));
  await assertFails(ref(pub,'typingCertificates',key).delete());

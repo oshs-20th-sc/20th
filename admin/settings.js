@@ -1,5 +1,5 @@
 /** Event, session, and typing challenge settings. */
-import { adminContext } from '../db/firebase.js?v=typing-certificate-1';
+import { adminContext } from '../db/firebase.js?v=record-time-1';
 import {
   deleteChallenge,
   readChallenges,
@@ -7,10 +7,10 @@ import {
   saveChallenge,
   selectChallenge,
   setEvent,
-} from '../db/database.js?v=typing-certificate-1';
+} from '../db/database.js?v=record-time-1';
 import { countKeystrokes } from '../typing/scoring.js';
 import { escapeHtml as html } from '../common.js';
-import { readSessionPolicy, saveSessionPolicy } from '../db/database.js?v=typing-certificate-1';
+import { readSessionPolicy, saveSessionPolicy } from '../db/database.js?v=record-time-1';
 import {
   $,
   area,
@@ -24,8 +24,8 @@ import {
   select,
   setStatus,
   submit,
-} from './shared.js?v=typing-certificate-1';
-import { state, feature } from './state.js?v=typing-certificate-1';
+} from './shared.js?v=record-time-1';
+import { state, feature } from './state.js?v=record-time-1';
 
 export function settingsView() {
   const eventSettings = feature === 'typing'

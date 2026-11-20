@@ -8,7 +8,7 @@ import {
   encodeData,
   decodeData,
   fieldPath,
-} from './schema.js?v=typing-certificate-1';
+} from './schema.js?v=record-time-1';
 const kinds = new WeakMap();
 const rawSnapshots = new WeakMap();
 function tag(ref, kind) {

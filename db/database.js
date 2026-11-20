@@ -16,7 +16,7 @@ import {
   writeBatch,
   setDoc,
   deleteDoc,
-} from './store.js?v=typing-certificate-1';
+} from './store.js?v=record-time-1';
 import {
   normalizeText,
   unicodeLength,
@@ -26,13 +26,12 @@ import {
 } from '../common.js?v=typing-certificate-1';
 import { calculateScore, countKeystrokes } from '../typing/scoring.js?v=typing-certificate-1';
 import { CHALLENGE } from '../typing/challenge.js?v=typing-certificate-1';
-import { ClientError, withDeadline, adminContext } from './firebase.js?v=typing-certificate-1';
-import { readEvent } from './public.js?v=typing-certificate-1';
-import { COLLECTIONS, SCHEMA_VERSION, encodeData } from './schema.js?v=typing-certificate-1';
+import { ClientError, withDeadline, adminContext } from './firebase.js?v=record-time-1';
+import { readEvent } from './public.js?v=record-time-1';
+import { COLLECTIONS, SCHEMA_VERSION, encodeData } from './schema.js?v=record-time-1';
 import { typingCertificateKey, typingCertificate, validTypingCertificate } from './typing-certificate.js?v=typing-certificate-1';
 export const PAGE_SIZE = 100;
-const OFFICIAL_CLAIM_PREFIX = 'official-20261123-';
-export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=typing-certificate-1';
+export { readEvent, readPublicLetters, readPublicLetter } from './public.js?v=record-time-1';
 export async function payloadHash(payload) {
   const bytes = await crypto.subtle.digest(
     'SHA-256',
@@ -87,7 +86,7 @@ async function createRecordOnce(
   let savedPayload = payload;
   let publishCertificate = !!certificate && !!claimStudentNumber;
   if (claimStudentNumber) {
-    const claimId = `${OFFICIAL_CLAIM_PREFIX}${claimStudentNumber}`;
+    const claimId = claimStudentNumber;
     const claimRef = doc(db, 'typingEntries', claimId);
     if (asAdmin) {
       const claim = await withDeadline(getDoc(claimRef));
@@ -834,8 +833,8 @@ export async function reviewTyping(db, id, patch) {
     const after = { ...patch };
     if ('verificationStatus' in patch && patch.verificationStatus !== 'verified') after.prizeReceived = false;
     if ((after.prizeReceived ?? before.prizeReceived) &&
-        (before.practice || (after.verificationStatus ?? before.verificationStatus) !== 'verified'))
-      throw new ClientError('확인된 공식 기록만 상품 수령을 표시할 수 있습니다.', 400);
+        (before.practice || (after.verificationStatus ?? before.verificationStatus) === 'rejected'))
+      throw new ClientError('이전 연습·제외 기록은 상품 수령을 표시할 수 없습니다.', 400);
     if (Object.entries(after).every(([key, value]) => before[key] === value)) return;
     tx.update(ref, { ...after, reviewed_at: serverTimestamp() });
   }));
@@ -985,7 +984,7 @@ export async function deleteTyping(db, id) {
       let certificateRef = null;
       let certificate = null;
       if (officialRecord && /^[1-3][0-9]{4}$/.test(data.participantId ?? '')) {
-        claimRef = doc(db, 'typingEntries', `${OFFICIAL_CLAIM_PREFIX}${data.participantId}`);
+        claimRef = doc(db, 'typingEntries', data.participantId);
         claim = await tx.get(claimRef);
         if (typeof data.displayName === 'string') {
           certificateRef = doc(db, 'typingCertificates', await typingCertificateKey(data.participantId, data.displayName));
@@ -1020,7 +1019,7 @@ export async function releaseOrphanedTypingClaim(db, studentNumber, expectedResu
   if (!/^[1-3][0-9]{4}$/.test(studentNumber ?? '') || !UUID_PATTERN.test(expectedResultId ?? ''))
     throw new ClientError('참가 학번 또는 기록 ID를 확인하세요.', 400);
   return withDeadline(runTransaction(db, async (tx) => {
-    const claimRef = doc(db, 'typingEntries', `${OFFICIAL_CLAIM_PREFIX}${studentNumber}`);
+    const claimRef = doc(db, 'typingEntries', studentNumber);
     const resultRef = doc(db, 'typingResults', expectedResultId);
     const receiptRef = doc(db, 'typingReceipts', expectedResultId);
     const [claim, result, receipt] = await Promise.all([

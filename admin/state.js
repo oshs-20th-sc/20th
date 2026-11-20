@@ -1,5 +1,5 @@
 /** Mutable state shared by the admin entrypoint and feature modules. */
-import { DEFAULT_SESSION_POLICY } from '../db/database.js?v=typing-certificate-1';
+import { DEFAULT_SESSION_POLICY } from '../db/database.js?v=record-time-1';
 
 export const feature = document.body.dataset.feature;
 export const state = {
@@ -21,7 +21,7 @@ export const state = {
   resultHasNext: false,
   selectedLetters: new Set(),
   letterFilter: { query: '', status: feature === 'welcome' ? 'approved' : '', sort: 'desc' },
-  resultFilter: { query: '', version: null, verification: 'all', view: 'ranking' },
+  resultFilter: { query: '', version: null, view: 'ranking' },
   renderedHash: location.hash,
   savedForms: new WeakMap(),
   listCache: new Map(),

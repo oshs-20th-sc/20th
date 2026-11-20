@@ -47,12 +47,12 @@ const admin=doc('admins','admin-test-1',{enabled:{booleanValue:true},email:{stri
 const sources=[record,receipt,claim,letter,log,admin];
 const rows=prepareRows(sources);
 const byPath=new Map(rows.map((row)=>[row.path,row]));
-assert.equal(byPath.get('타자대회/2026-11-23/기록/'+resultId).fields['소요시간밀리초'].doubleValue,12345,
+assert.equal(byPath.get('타자대회/기본/기록/'+resultId).fields['소요시간밀리초'].doubleValue,12345,
   'integral double keeps its original Firestore value type');
-assert.equal(byPath.get('타자대회/2026-11-23/기록/'+resultId).fields['학번'].stringValue,'20101');
-assert.equal(byPath.get('타자대회/2026-11-23/참여제한/20101').fields['기록ID'].stringValue,resultId);
+assert.equal(byPath.get('타자대회/기본/기록/'+resultId).fields['학번'].stringValue,'20101');
+assert.equal(byPath.get('타자대회/기본/참여제한/20101').fields['기록ID'].stringValue,resultId);
 assert.equal(byPath.get('글쓰기/기본/검수이력/'+logId).fields['변경전'].mapValue.fields['학번'].stringValue,'20102');
-assert.equal(byPath.get('타자대회/2026-11-23/접수확인/'+resultId).fields['내용해시'].stringValue,'a'.repeat(64));
+assert.equal(byPath.get('타자대회/기본/접수확인/'+resultId).fields['내용해시'].stringValue,'a'.repeat(64));
 assert.throws(()=>prepareRows([doc('letters',letterId,{bogus:{stringValue:'unknown'}})]));
 
 const backup=backupFromDocuments(project,sources);
@@ -67,28 +67,40 @@ const v5={schemaVersion:5,backend:'firebase',projectId:project,includesAuthentic
   settings:[{id:'event',data:{'운영단계':'A','수정시각':{__firestoreTimestamp:true,seconds:1794794584,nanoseconds:123456789}}}],
 }};
 assert.equal(validateBackup(v5).length,2);
+const v6=structuredClone(v5);
+v6.schemaVersion=6;
+v6.collections.typingEntries[0].id='20101';
+assert.equal(validateBackup(v6).length,2);
+const currentClaimPaths=[];
+await restoreBackup({projectId:project,doc(path){currentClaimPaths.push(path);return{get:async()=>({exists:false})};}},v6,{apply:false});
+assert(currentClaimPaths.includes('타자대회/기본/참여제한/20101'));
+const collidingClaims=structuredClone(v6);
+collidingClaims.collections.typingEntries.push({...structuredClone(collidingClaims.collections.typingEntries[0]),id:claimId});
+await assert.rejects(()=>restoreBackup({projectId:project,doc(){throw Error('must reject colliding claim IDs before any read')}},collidingClaims,{apply:true}),/DUPLICATE_RESTORE_DESTINATION/);
 const aliasedBackup=structuredClone(v5);
 aliasedBackup.collections.settings.push({...structuredClone(aliasedBackup.collections.settings[0]),id:'행사'});
 await assert.rejects(()=>restoreBackup({projectId:project,doc(){throw Error('must reject aliases before any read or write')}},aliasedBackup,{apply:true}),/DUPLICATE_RESTORE_DESTINATION/);
 const restoredPaths=[];
 const restoreResult=await restoreBackup({projectId:project,doc(path){restoredPaths.push(path);return{get:async()=>({exists:false})};}},v5,{apply:false});
-assert(restoredPaths.includes('타자대회/2026-11-23/참여제한/20101'));
+assert(restoredPaths.includes('타자대회/기본/참여제한/20101'));
 assert(restoredPaths.includes('운영설정/행사'));
-assert(restoredPaths.includes('타자대회/2026-11-23'));
+assert(restoredPaths.includes('타자대회/기본'));
 assert.equal(restoreResult.results.length,3,'restore plan includes a missing parent document');
 const restoredDocs=new Map();
 class MockTimestamp { constructor(seconds,nanoseconds){this.seconds=seconds;this.nanoseconds=nanoseconds;} }
 await restoreBackup({projectId:project,doc(path){return{path,get:async()=>({exists:restoredDocs.has(path),data:()=>restoredDocs.get(path)})};},
   async runTransaction(fn){return fn({async get(ref){return{exists:restoredDocs.has(ref.path),data:()=>restoredDocs.get(ref.path)};},
     create(ref,data){restoredDocs.set(ref.path,data);}});}},v5,{apply:true,Timestamp:MockTimestamp});
-assert(restoredDocs.has('타자대회/2026-11-23'),'restore creates parent metadata before use');
-assert(restoredDocs.has('타자대회/2026-11-23/참여제한/20101'));
+assert(restoredDocs.has('타자대회/기본'),'restore creates parent metadata before use');
+assert(restoredDocs.has('타자대회/기본/참여제한/20101'));
+assert.equal(restoredDocs.get('타자대회/기본/참여제한/20101')['학번'], '20101',
+  'v5 backup fields stay in the Korean persisted schema');
 const operatorParent={행사명:'관리자 수정값'};
-const restorePreserved=new Map([['타자대회/2026-11-23',operatorParent]]);
+const restorePreserved=new Map([['타자대회/기본',operatorParent]]);
 await restoreBackup({projectId:project,doc(path){return{path,get:async()=>({exists:restorePreserved.has(path),data:()=>restorePreserved.get(path)})};},
   async runTransaction(fn){return fn({async get(ref){return{exists:restorePreserved.has(ref.path),data:()=>restorePreserved.get(ref.path)};},
     create(ref,data){restorePreserved.set(ref.path,data);}});}},v5,{apply:true,Timestamp:MockTimestamp});
-assert.deepEqual(restorePreserved.get('타자대회/2026-11-23'),operatorParent,
+assert.deepEqual(restorePreserved.get('타자대회/기본'),operatorParent,
   'restore preserves existing operator-owned parent metadata');
 const statuses=migrationPlan(rows,new Map([[rows[0].path,{fields:rows[0].fields}]]));
 assert.equal(statuses.find(row=>row.path===rows[0].path).status,'unchanged');
@@ -123,9 +135,9 @@ const applied=await migrateDocuments(simulated,project,rows,{apply:true});
 assert.equal(applied.applied,true);
 assert.equal(applied.plan.filter(item=>item.status==='create').length,rows.length+2);
 assert.equal(applied.parentsCreated,2);
-assert(simulated.docs.has(`${base}/타자대회/2026-11-23`));
+assert(simulated.docs.has(`${base}/타자대회/기본`));
 assert(simulated.docs.has(`${base}/글쓰기/기본`));
-assert.equal([...simulated.docs.keys()].filter(name=>name.includes('/타자대회/2026-11-23/')).length,3);
+assert.equal([...simulated.docs.keys()].filter(name=>name.includes('/타자대회/기본/')).length,3);
 assert.equal([...simulated.docs.keys()].filter(name=>name.includes('/글쓰기/기본/')).length,2);
 assert(sources.every(source=>simulated.docs.has(source.name)),'migration keeps every source document for rollback');
 const repeated=await migrateDocuments(simulated,project,rows,{apply:true});
@@ -134,12 +146,12 @@ assert.equal(repeated.plan.filter(item=>item.kind==='parent').length,2);
 assert(repeated.plan.filter(item=>item.kind==='parent').every(item=>item.status==='unchanged'));
 
 const operatorMetadata={fields:{행사명:{stringValue:'운영자가 수정한 행사명'}}};
-const preserveParent=mockFirestore([...sources,{name:`${base}/타자대회/2026-11-23`,...operatorMetadata,updateTime:'2026-11-16T01:00:00Z'}]);
+const preserveParent=mockFirestore([...sources,{name:`${base}/타자대회/기본`,...operatorMetadata,updateTime:'2026-11-16T01:00:00Z'}]);
 const preserved=await migrateDocuments(preserveParent,project,rows,{apply:false});
-assert.equal(preserved.plan.find(item=>item.path==='타자대회/2026-11-23').status,'preserved');
+assert.equal(preserved.plan.find(item=>item.path==='타자대회/기본').status,'preserved');
 assert.equal(preserved.plan.find(item=>item.path==='글쓰기/기본').status,'create');
 await migrateDocuments(preserveParent,project,rows,{apply:true});
-assert.deepEqual(preserveParent.docs.get(`${base}/타자대회/2026-11-23`).fields,operatorMetadata.fields,
+assert.deepEqual(preserveParent.docs.get(`${base}/타자대회/기본`).fields,operatorMetadata.fields,
   'operator-owned parent metadata is never overwritten');
 assert(preserveParent.docs.has(`${base}/글쓰기/기본`),'missing parent metadata is created');
 

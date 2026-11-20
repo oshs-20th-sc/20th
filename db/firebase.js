@@ -10,7 +10,7 @@ import {
   setDoc,
   serverTimestamp,
   onSnapshot,
-} from './store.js?v=typing-certificate-1';
+} from './store.js?v=record-time-1';
 export class ClientError extends Error {
   constructor(message, status = 0, code = 'UNKNOWN') {
     super(message);
@@ -491,4 +491,4 @@ export {
   getDoc,
   serverTimestamp,
   setDoc,
-} from './store.js?v=typing-certificate-1';
+} from './store.js?v=record-time-1';

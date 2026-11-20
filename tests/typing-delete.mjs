@@ -15,7 +15,7 @@ const deleteSource = source.slice(deleteStart, deleteEnd).replaceAll('export asy
 const ID = '00000000-0000-4000-8000-000000000001';
 const NEW_ID = '00000000-0000-4000-8000-000000000002';
 const OTHER_ID = '00000000-0000-4000-8000-000000000003';
-const CLAIM_ID = 'official-20261123-20101';
+const CLAIM_ID = '20101';
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/;
 
 function setup({ results = {}, receipts = {}, authorized = true, failCommit = false } = {}) {
@@ -27,7 +27,6 @@ function setup({ results = {}, receipts = {}, authorized = true, failCommit = fa
     : database.receipts[ref.id];
   const context = {
     UUID_PATTERN,
-    OFFICIAL_CLAIM_PREFIX: 'official-20261123-',
     ClientError: class ClientError extends Error {
       constructor(message, status = 0, code = 'UNKNOWN') { super(message); this.status = status; this.code = code; }
     },
@@ -43,7 +42,7 @@ function setup({ results = {}, receipts = {}, authorized = true, failCommit = fa
         async commit() {
           if (!database.authorized) throw Object.assign(new Error('permission denied'), { code: 'permission-denied' });
           if (writes.some((write) => write.ref.collection === 'typingEntries' &&
-              write.ref.id.startsWith('official-20261123-') && database.receipts[write.ref.id]))
+              /^[1-3][0-9]{4}$/.test(write.ref.id) && database.receipts[write.ref.id]))
             throw Object.assign(new Error('claim already exists'), { code: 'permission-denied' });
           for (const write of writes) {
             const store = write.ref.collection === 'typingResults' ? database.results : database.receipts;
@@ -82,7 +81,7 @@ function setup({ results = {}, receipts = {}, authorized = true, failCommit = fa
             assert.equal(afterReceipts[id], undefined, 'legacy typing receipt must be removed with its result');
           }
         }
-        if (collection === 'typingEntries' && id.startsWith('official-20261123-')) {
+        if (collection === 'typingEntries' && /^[1-3][0-9]{4}$/.test(id)) {
           const claim = database.receipts[id];
           assert.equal(afterResults[claim?.result_id], undefined, 'claim cannot be released while its result exists');
           assert.equal(afterReceipts[claim?.result_id], undefined, 'claim and UUID receipt are deleted together');

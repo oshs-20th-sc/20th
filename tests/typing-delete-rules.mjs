@@ -20,9 +20,9 @@ const env = await initializeTestEnvironment({
   firestore: { host: '127.0.0.1', port: 8088, rules },
 });
 const paths = {
-  admins: '관리자', settings: '운영설정', challenges: '타자대회/2026-11-23/문구',
-  results: '타자대회/2026-11-23/기록', entries: '타자대회/2026-11-23/참여제한',
-  typingReceipts: '타자대회/2026-11-23/접수확인', letterReceipts: '글쓰기/기본/접수확인',
+  admins: '관리자', settings: '운영설정', challenges: '타자대회/기본/문구',
+  results: '타자대회/기본/기록', entries: '타자대회/기본/참여제한',
+  typingReceipts: '타자대회/기본/접수확인', letterReceipts: '글쓰기/기본/접수확인',
 };
 const adminDb = env.authenticatedContext('test-admin').firestore();
 const studentDb = env.unauthenticatedContext().firestore();

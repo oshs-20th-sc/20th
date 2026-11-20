@@ -1,6 +1,6 @@
-import { errorMessage, getPublicDb } from '../db/firebase.js?v=typing-certificate-1';
-import { readEvent } from '../db/public.js?v=typing-certificate-1';
-import { submitLetter } from '../db/database.js?v=typing-certificate-1';
+import { errorMessage, getPublicDb } from '../db/firebase.js?v=record-time-1';
+import { readEvent } from '../db/public.js?v=record-time-1';
+import { submitLetter } from '../db/database.js?v=record-time-1';
 import { normalizeText, unicodeLength, validateSubmission } from '../common.js?v=typing-certificate-1';
 
 const form = document.querySelector('#write-form');

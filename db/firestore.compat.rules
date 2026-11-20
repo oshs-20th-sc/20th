@@ -1,5 +1,5 @@
-// Persisted schema v5: Korean field names and event-scoped paths are defined in db/schema.js.
-// Private originals: 타자대회/2026-11-23/기록, 글쓰기/기본/접수글.
+// Persisted schema v6: Korean field names and date-independent paths are defined in db/schema.js.
+// Private originals: 타자대회/기본/기록, 글쓰기/기본/접수글.
 // Public projection: 글쓰기/기본/공개글. Receipt hashes and participation claims are separate.
 // Letter snapshots and immutable audit history remain private to enabled admins.
 rules_version = '2';
@@ -32,16 +32,16 @@ service cloud.firestore {
     function currentChallenge(data) {
       let event = get(path('databases/' + database + '/documents/운영설정/행사')).data;
       let challengeId = data.get('문구ID', '');
-      let path = path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + challengeId + '');
+      let path = path('databases/' + database + '/documents/타자대회/기본/문구/' + challengeId + '');
       return challengeId == event.get('선택문구ID', 'aegukga-verse1-practice-v1-floor0')
         && exists(path) && get(path).data.get('삭제여부', false) == false;
     }
     function recordReceipt(id, kind) {
       let letterReceiptPath = path('databases/' + database + '/documents/글쓰기/기본/접수확인/' + id + '');
-      let typingReceiptPath = path('databases/' + database + '/documents/타자대회/2026-11-23/접수확인/' + id + '');
+      let typingReceiptPath = path('databases/' + database + '/documents/타자대회/기본/접수확인/' + id + '');
       let receipt = kind == 'letter' ? getAfter(letterReceiptPath).data : getAfter(typingReceiptPath).data;
       let letterPath = path('databases/' + database + '/documents/글쓰기/기본/접수글/' + id + '');
-      let resultPath = path('databases/' + database + '/documents/타자대회/2026-11-23/기록/' + id + '');
+      let resultPath = path('databases/' + database + '/documents/타자대회/기본/기록/' + id + '');
       let target = kind == 'letter' ? getAfter(letterPath).data : getAfter(resultPath).data;
       let targetTimestamp = kind == 'letter' ? target['생성시각'] : target['접수시각'];
       return receipt['문서ID'] == id && receipt['참가방식'] == 'record'
@@ -51,9 +51,9 @@ service cloud.firestore {
         && target['참가방식'] == 'record' && target['이전계정UID'] == null
         && targetTimestamp == request.time;
     }
-    function typingReceiptPath(id) { return path('databases/' + database + '/documents/타자대회/2026-11-23/접수확인/' + id + ''); }
-    function typingEntryPath(number) { return path('databases/' + database + '/documents/타자대회/2026-11-23/참여제한/' + number + ''); }
-    function resultPath(id) { return path('databases/' + database + '/documents/타자대회/2026-11-23/기록/' + id + ''); }
+    function typingReceiptPath(id) { return path('databases/' + database + '/documents/타자대회/기본/접수확인/' + id + ''); }
+    function typingEntryPath(number) { return path('databases/' + database + '/documents/타자대회/기본/참여제한/' + number + ''); }
+    function resultPath(id) { return path('databases/' + database + '/documents/타자대회/기본/기록/' + id + ''); }
     function exactTypingEntry(id, data) {
       let number = participant(data);
       let path = typingEntryPath(number);
@@ -63,7 +63,7 @@ service cloud.firestore {
     }
 
     function certificateHash(number, name) { return hashing.sha256(number + '\n' + name).toHexString().lower(); }
-    function certificatePath(key) { return path('databases/' + database + '/documents/타자대회/2026-11-23/기록증/' + key); }
+    function certificatePath(key) { return path('databases/' + database + '/documents/타자대회/기본/기록증/' + key); }
     function certificateKey(data) { return certificateHash(data.get('학번', ''), data.get('이름', '')); }
     function certificateReadable(key, data) {
       let fields = ['문서ID', '학번', '이름', '문구ID', '소요시간밀리초', '분당타수', '누적오타', '최종점수', '완료시각', '문구본문', '문구제목', '기준타수'];
@@ -83,7 +83,7 @@ service cloud.firestore {
     function certificateCreate(key, data) {
       let sourcePath = resultPath(data.get('문서ID', ''));
       let source = getAfter(sourcePath).data;
-      let challengePath = path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data.get('문구ID', ''));
+      let challengePath = path('databases/' + database + '/documents/타자대회/기본/문구/' + data.get('문구ID', ''));
       let challenge = exists(challengePath) ? get(challengePath).data : {};
       return certificateReadable(key, data) && (admin() || !signedIn())
         && source.get('참가방식', '') == 'record' && source['연습여부'] == false
@@ -176,8 +176,8 @@ service cloud.firestore {
         && data.get('타자접수허용', true) is bool && data.get('글접수허용', true) is bool
         && data.get('공개글열람허용', false) is bool
         && (!('선택문구ID' in data) || (text(data['선택문구ID'], 1, 100)
-          && getAfter(path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data['선택문구ID'] + '')).data['사용여부'] == true
-          && getAfter(path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data['선택문구ID'] + '')).data.get('삭제여부', false) == false));
+          && getAfter(path('databases/' + database + '/documents/타자대회/기본/문구/' + data['선택문구ID'] + '')).data['사용여부'] == true
+          && getAfter(path('databases/' + database + '/documents/타자대회/기본/문구/' + data['선택문구ID'] + '')).data.get('삭제여부', false) == false));
     }
     function challengeValid(id, data) {
       return id.matches('[a-zA-Z0-9_-]{1,100}')
@@ -196,7 +196,7 @@ service cloud.firestore {
         ? data['분당타수'] is int && data['분당타수'] >= 0
           && data['누적오타'] is int && data['누적오타'] >= 0 && data['누적오타'] <= 10000
           && data['최종점수'] is int && data['최종점수'] >= 0
-        : exists(path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data['문구ID'] + ''))
+        : exists(path('databases/' + database + '/documents/타자대회/기본/문구/' + data['문구ID'] + ''))
           ? calculatedScore(data)
           : request.method == 'update' && admin()
             && data['분당타수'] is int && data['분당타수'] >= 0
@@ -205,7 +205,7 @@ service cloud.firestore {
             && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['검수상태', '상품수령여부', '검수시각']);
     }
     function calculatedScore(data) {
-      let challenge = get(path('databases/' + database + '/documents/타자대회/2026-11-23/문구/' + data['문구ID'] + '')).data;
+      let challenge = get(path('databases/' + database + '/documents/타자대회/기본/문구/' + data['문구ID'] + '')).data;
       let calculated = challenge['기준타수'] * 60000.0 / data['소요시간밀리초'];
       let penalty = data.get('참가방식', '') == 'record' ? 3 : challenge.get('오타감점', 3);
       let rawScore = data['분당타수'] - data['누적오타'] * penalty;
@@ -235,7 +235,7 @@ service cloud.firestore {
         && data['접수시각'] is timestamp && (data['검수시각'] == null || data['검수시각'] is timestamp)
         && data['상품수령여부'] is bool && data['연습여부'] is bool
         && data['검수상태'] in ['pending', 'verified', 'rejected']
-        && (!data['상품수령여부'] || (!data['연습여부'] && data['검수상태'] == 'verified')) && validScore(data);
+        && (!data['상품수령여부'] || (!data['연습여부'] && data['검수상태'] != 'rejected')) && validScore(data);
     }
     function validRecordReceipt(id, data, kind) {
       return uuid(id) && data.keys().hasAll(['문서ID', '이전계정UID', '참가방식', '접수종류', '내용해시', '생성시각'])
@@ -353,17 +353,17 @@ service cloud.firestore {
       allow delete: if inTarget() && (admin() && request.auth.uid != uid);
     }
     match /{root}/{eventId} {
-      function inTarget() { return root == '타자대회' && eventId == '2026-11-23'; }
-      allow get: if inTarget() && (resource.data == {'행사명': '타자 대회', '행사일': '2026-11-23', '스키마버전': 5});
+      function inTarget() { return root == '타자대회' && eventId == '기본'; }
+      allow get: if inTarget() && (resource.data == {'운영명': '타자 대회', '스키마버전': 6});
       allow list, create, update, delete: if inTarget() && (false);
     }
     match /{root}/{eventId} {
       function inTarget() { return root == '글쓰기' && eventId == '기본'; }
-      allow get: if inTarget() && (resource.data == {'운영명': '글쓰기', '스키마버전': 5});
+      allow get: if inTarget() && (resource.data == {'운영명': '글쓰기', '스키마버전': 6});
       allow list, create, update, delete: if inTarget() && (false);
     }
     match /{root}/{eventId}/{subcollection}/{id} {
-      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '문구'; }
+      function inTarget() { return root == '타자대회' && eventId == '기본' && subcollection == '문구'; }
       allow read: if inTarget() && (true);
       allow create: if inTarget() && (admin() && challengeValid(id, request.resource.data));
       allow update: if inTarget() && (admin() && challengeValid(id, request.resource.data)
@@ -373,7 +373,7 @@ service cloud.firestore {
         || getAfter(path('databases/' + database + '/documents/운영설정/행사')).data.get('선택문구ID', 'aegukga-verse1-practice-v1-floor0') != id));
     }
     match /{root}/{eventId}/{subcollection}/{id} {
-      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '접수확인'; }
+      function inTarget() { return root == '타자대회' && eventId == '기본' && subcollection == '접수확인'; }
       allow get: if inTarget() && (admin() || (!exists(typingReceiptPath(id)) && uuid(id))
         || (exists(typingReceiptPath(id)) && resource.data.get('참가방식', '') == 'record'
           && resource.data['이전계정UID'] == null
@@ -389,14 +389,14 @@ service cloud.firestore {
       allow delete: if inTarget() && (admin() && typingReceiptDeleteReady(id, resource.data));
     }
     match /{root}/{eventId}/{subcollection}/{id} {
-      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '참여제한'; }
+      function inTarget() { return root == '타자대회' && eventId == '기본' && subcollection == '참여제한'; }
       allow get, list: if inTarget() && (admin());
       allow create: if inTarget() && ((admin() || !signedIn()) && validTypingEntry(id, request.resource.data, true));
       allow update: if inTarget() && (false);
       allow delete: if inTarget() && (admin() && typingEntryDeleteReady(id, resource.data));
     }
     match /{root}/{eventId}/{subcollection}/{id} {
-      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '기록'; }
+      function inTarget() { return root == '타자대회' && eventId == '기본' && subcollection == '기록'; }
       function publicEntry(data) {
         return !signedIn() && data['참가방식'] == 'record' && data['이전계정UID'] == null
           && validTyping(data, id) && data['연습여부'] == false && currentChallenge(data)
@@ -541,6 +541,16 @@ service cloud.firestore {
       function inTarget() { return root == '보관자료' && eventId == '이전자료' && subcollection == '학생명부'; } allow read: if inTarget() && (admin()); allow write: if inTarget() && (false); }
     match /{root}/{eventId}/{subcollection}/{id} {
       function inTarget() { return root == '보관자료' && eventId == '이전자료' && subcollection == '학생제재이력'; } allow read: if inTarget() && (admin()); allow write: if inTarget() && (false); }
+
+    match /{root}/{eventId}/{subcollection}/{key} {
+      function inTarget() { return root == '타자대회' && eventId == '기본' && subcollection == '기록증'; }
+      allow get: if inTarget() && (admin() || (key.matches('[0-9a-f]{64}')
+        && (!exists(certificatePath(key)) || certificateReadable(key, resource.data))));
+      allow list: if inTarget() && admin();
+      allow create: if inTarget() && certificateCreate(key, request.resource.data);
+      allow update: if false;
+      allow delete: if inTarget() && admin() && !existsAfter(resultPath(resource.data['문서ID']));
+    }
     // Frozen English-schema data is readable for the cutover window. Every legacy write is denied.
     match /admins/{uid} {
       allow get: if signedIn() && request.auth.uid == uid;
@@ -566,15 +576,6 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    match /{root}/{eventId}/{subcollection}/{key} {
-      function inTarget() { return root == '타자대회' && eventId == '2026-11-23' && subcollection == '기록증'; }
-      allow get: if inTarget() && (admin() || (key.matches('[0-9a-f]{64}')
-        && (!exists(certificatePath(key)) || certificateReadable(key, resource.data))));
-      allow list: if inTarget() && admin();
-      allow create: if inTarget() && certificateCreate(key, request.resource.data);
-      allow update: if false;
-      allow delete: if inTarget() && admin() && !existsAfter(resultPath(resource.data['문서ID']));
-    }
     match /{document=**} { allow read, write: if false; }
   }
 }

@@ -1,16 +1,16 @@
 // The only persisted-schema definition. UI/engine objects keep their existing API.
-export const SCHEMA_VERSION = 5;
-export const TYPING_EVENT_ID = '2026-11-23';
+export const SCHEMA_VERSION = 6;
+export const TYPING_STORAGE_ID = '기본';
 export const WRITING_EVENT_ID = '기본';
-export const CLAIM_PREFIX = 'official-20261123-';
+const LEGACY_CLAIM_ID = /^official-\d{8}-([1-3][0-9]{4})$/;
 export const COLLECTIONS = Object.freeze({
   admins: '관리자',
   settings: '운영설정',
-  challenges: `타자대회/${TYPING_EVENT_ID}/문구`,
-  typingResults: `타자대회/${TYPING_EVENT_ID}/기록`,
-  typingEntries: `타자대회/${TYPING_EVENT_ID}/참여제한`,
-  typingReceipts: `타자대회/${TYPING_EVENT_ID}/접수확인`,
-  typingCertificates: `타자대회/${TYPING_EVENT_ID}/기록증`,
+  challenges: `타자대회/${TYPING_STORAGE_ID}/문구`,
+  typingResults: `타자대회/${TYPING_STORAGE_ID}/기록`,
+  typingEntries: `타자대회/${TYPING_STORAGE_ID}/참여제한`,
+  typingReceipts: `타자대회/${TYPING_STORAGE_ID}/접수확인`,
+  typingCertificates: `타자대회/${TYPING_STORAGE_ID}/기록증`,
   letters: `글쓰기/${WRITING_EVENT_ID}/접수글`,
   publicLetters: `글쓰기/${WRITING_EVENT_ID}/공개글`,
   letterTrash: `글쓰기/${WRITING_EVENT_ID}/휴지통`,
@@ -188,14 +188,16 @@ export function documentPath(kind, id) {
     throw new Error('Invalid document ID');
   if (kind === 'settings')
     id = { event: '행사', sessionPolicy: '세션' }[id] ?? id;
-  if (kind === 'typingEntries' && id.startsWith(CLAIM_PREFIX))
-    id = id.slice(CLAIM_PREFIX.length);
+  if (kind === 'typingEntries') id = normalizeTypingEntryId(id);
   return `${collectionPath(kind)}/${id}`;
+}
+function normalizeTypingEntryId(id) {
+  return LEGACY_CLAIM_ID.exec(id)?.[1] ?? id;
 }
 export function logicalId(kind, id) {
   if (kind === 'settings')
     return { 행사: 'event', 세션: 'sessionPolicy' }[id] ?? id;
-  if (kind === 'typingEntries') return `${CLAIM_PREFIX}${id}`;
+  if (kind === 'typingEntries') return normalizeTypingEntryId(id);
   return id;
 }
 export function kindForPath(path) {
@@ -276,9 +278,8 @@ export function legacyDestination(collection, id, data) {
   return { kind, id, path: documentPath(kind, id) };
 }
 export const PARENT_DOCUMENTS = Object.freeze({
-  [`타자대회/${TYPING_EVENT_ID}`]: {
-    행사명: '타자 대회',
-    행사일: '2026-11-23',
+  [`타자대회/${TYPING_STORAGE_ID}`]: {
+    운영명: '타자 대회',
     스키마버전: SCHEMA_VERSION,
   },
   [`글쓰기/${WRITING_EVENT_ID}`]: {

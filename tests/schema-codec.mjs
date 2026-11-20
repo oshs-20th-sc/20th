@@ -4,13 +4,17 @@ import {
   kindForPath, fieldPath, encodeData, decodeData, legacyDestination,
 } from '../db/schema.js';
 
-assert.equal(SCHEMA_VERSION, 5);
-assert.equal(collectionPath('typingResults'), '타자대회/2026-11-23/기록');
+assert.equal(SCHEMA_VERSION, 6);
+assert.equal(collectionPath('typingResults'), '타자대회/기본/기록');
 assert.equal(documentPath('settings', 'event'), '운영설정/행사');
 assert.equal(documentPath('settings', 'sessionPolicy'), '운영설정/세션');
-assert.equal(documentPath('typingEntries', 'official-20261123-20101'), '타자대회/2026-11-23/참여제한/20101');
-assert.equal(logicalId('typingEntries', '20101'), 'official-20261123-20101');
+assert.equal(documentPath('typingEntries', 'official-20261123-20101'), '타자대회/기본/참여제한/20101');
+assert.equal(documentPath('typingEntries', 'official-20350101-20101'), '타자대회/기본/참여제한/20101');
+assert.equal(logicalId('typingEntries', '20101'), '20101');
+assert.equal(logicalId('typingEntries', 'official-20261123-20101'), '20101');
 assert.equal(kindForPath('글쓰기/기본/접수글/0123'), 'letters');
+assert.equal(kindForPath('타자대회/기본/기록/0123'), 'typingResults');
+assert.equal(kindForPath('타자대회/2026-11-23/기록/0123'), null);
 assert.equal(kindForPath('학생들/오래된/위치'), null);
 assert.equal(fieldPath('verificationStatus'), '검수상태');
 assert.equal(fieldPath('letter.status'), '글원본.검수상태');
