@@ -46,8 +46,7 @@ export function settingsView() {
         ['C', 'C · 공개'],
       ])}
       ${checkbox('submissionsEnabled', '글 접수', state.config?.submissionsEnabled)}${checkbox('welcomeEnabled', '승인 글 공개', state.config?.welcomeEnabled)}
-      <p class="muted">행사일 2026. 11. 23.(월) · 점심시간 현장 참여</p>
-      <p class="muted">정확한 점심시간은 운영진 현장 안내에 따릅니다.</p><button>저장</button></form>`;
+      <button>저장</button></form>`;
   $('#view').innerHTML = `${eventSettings}
     <form class="panel" id="session-policy"><h2>공용 기기 설정</h2>
     ${checkbox('boothMode', '공용 기기 모드', state.sessionPolicy.boothMode)}

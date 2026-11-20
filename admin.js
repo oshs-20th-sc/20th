@@ -31,7 +31,7 @@ import {
 } from './admin/shared.js?v=record-time-1';
 import { lettersView } from './admin/letters.js?v=record-time-1';
 import { recordsView } from './admin/typing.js?v=record-time-1';
-import { settingsView } from './admin/settings.js?v=record-time-1';
+import { settingsView } from './admin/settings.js?v=settings-copy-1';
 import { accountView } from './admin/account.js?v=record-time-1';
 
 function applySession(next) {
